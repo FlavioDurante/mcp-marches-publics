@@ -11,12 +11,14 @@ import logging
 import os
 import re
 
-from marches_publics_mcp.http import HttpClient, UpstreamError
+from marches_publics_mcp.http import HttpClient, UpstreamError, _TTLCache
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://recherche-entreprises.api.gouv.fr"
 MAX_CONCURRENCY = 5
+MEMO_TTL_S = 24 * 3600.0
+MEMO_MAX_ENTRIES = 2048
 _DUPLICATED_NAME = re.compile(r"^(?P<a>.+?) \((?P<b>.+)\)$")
 
 
@@ -43,23 +45,30 @@ class CompanyResolver:
         self._base = (base_url or os.getenv("MCP_MP_ENTREPRISES_URL") or DEFAULT_BASE_URL).rstrip(
             "/"
         )
-        self._memo: dict[str, str | None] = {}
+        # Values are 1-tuples so a cached "unknown" (None) differs from a cache miss.
+        self._memo = _TTLCache(MEMO_TTL_S, MEMO_MAX_ENTRIES)
         self._semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
-    async def name_for(self, siret: str) -> str | None:
-        """Return the display name of a company, or ``None`` if unknown or on any failure.
+    async def lookup(self, siret: str) -> str | None:
+        """Return the display name of a company; ``None`` means the identifier is unknown.
 
         Args:
             siret: A SIRET (14 digits) or SIREN (9 digits); spaces are ignored.
 
         Returns:
-            The company name (``nom_complet``), never anything else. Never raises.
+            The company name (``nom_complet``), or ``None`` when the identifier is malformed
+            or the directory has no matching company.
+
+        Raises:
+            UpstreamError: When the directory could not be queried (network error, HTTP error,
+                unusable response). Callers must not treat this as "unknown identifier".
         """
         key = "".join(str(siret).split())
         if not key.isdigit() or len(key) not in (9, 14):
             return None
-        if key in self._memo:
-            return self._memo[key]
+        cached = self._memo.get(key)
+        if cached is not None:
+            return cached[0]
         try:
             async with self._semaphore:
                 data = await self._http.get_json(
@@ -67,17 +76,34 @@ class CompanyResolver:
                     {"q": key, "page": 1, "per_page": 1},
                     source="entreprises",
                 )
+        except UpstreamError:
+            raise
+        except Exception as exc:
+            logger.warning("company lookup crashed", extra={"source": "entreprises"}, exc_info=True)
+            raise UpstreamError("entreprises", "unexpected failure during lookup") from exc
+        name = self._extract_name(data, key)
+        self._memo.set(key, (name,))
+        return name
+
+    async def name_for(self, siret: str) -> str | None:
+        """Return the display name of a company, or ``None`` if unknown or on any failure.
+
+        Meant for bulk enrichment: it never raises. Use ``lookup`` to tell an unknown
+        identifier from an upstream failure.
+
+        Args:
+            siret: A SIRET (14 digits) or SIREN (9 digits); spaces are ignored.
+
+        Returns:
+            The company name (``nom_complet``), never anything else.
+        """
+        try:
+            return await self.lookup(siret)
         except UpstreamError as exc:
             logger.warning(
                 "company lookup failed", extra={"source": "entreprises", "err": str(exc)}
             )
             return None
-        except Exception:
-            logger.warning("company lookup crashed", extra={"source": "entreprises"}, exc_info=True)
-            return None
-        name = self._extract_name(data, key)
-        self._memo[key] = name
-        return name
 
     async def names_for(self, sirets: list[str]) -> dict[str, str | None]:
         """Resolve several identifiers concurrently (at most 5 in flight).

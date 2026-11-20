@@ -83,11 +83,46 @@ async def test_base_url_override(http: HttpClient, fixture_loader: Loader) -> No
     assert route.called
 
 
+@respx.mock
+async def test_cpv_prefix_expands_to_or_of_subcodes(
+    client: BoampClient, fixture_loader: Loader
+) -> None:
+    route = respx.get(DEFAULT_BASE_URL).respond(json=fixture_loader("boamp", "search_page"))
+    await client.search(cpv="72212")
+    where = _where(route)
+    assert where.count("(search(donnees,") == 3  # grouped in chunks of 50
+    assert 'search(donnees, "72212000")' in where
+    assert 'search(donnees, "72212100")' in where
+    assert where.count("search(donnees,") == 139
+    assert 'search(donnees, "72000000")' not in where
+
+
+@respx.mock
+async def test_cpv_prefix_star_and_combined_filters(
+    client: BoampClient, fixture_loader: Loader
+) -> None:
+    route = respx.get(DEFAULT_BASE_URL).respond(json=fixture_loader("boamp", "search_page"))
+    await client.search(cpv="72*", departments=["31"], open_only=True)
+    where = _where(route)
+    assert 'search(donnees, "72212000")' in where
+    assert where.count("search(donnees,") == 252
+    assert 'AND (code_departement IN ("31"))' in where
+
+
+@respx.mock
+async def test_cpv_exact_code_unchanged(client: BoampClient, fixture_loader: Loader) -> None:
+    route = respx.get(DEFAULT_BASE_URL).respond(json=fixture_loader("boamp", "search_page"))
+    await client.search(cpv="72212000")
+    assert _where(route) == '(search(donnees, "72212000"))'
+
+
 @pytest.mark.parametrize(
     ("kwargs", "fragment"),
     [
-        ({"cpv": "72"}, "8-digit"),
-        ({"cpv": "72*"}, "8-digit"),
+        ({"cpv": "7"}, "CPV code"),
+        ({"cpv": "72x"}, "CPV code"),
+        ({"cpv": "99"}, "no CPV code starts with"),
+        ({"cpv": "45"}, "longer prefix"),
         ({"departments": ["Haute-Garonne"]}, "department"),
         ({"published_from": date(2026, 2, 1), "published_to": date(2026, 1, 1)}, "on or before"),
         ({"limit": 0}, "limit"),
@@ -283,3 +318,36 @@ async def test_live_cpv_department_and_open_filters() -> None:
             assert notice.deadline is not None
     finally:
         await http.aclose()
+
+
+@pytest.mark.integration
+async def test_live_cpv_prefix_finds_more_than_exact_code() -> None:
+    http = HttpClient(cache_ttl=0)
+    try:
+        boamp = BoampClient(http)
+        common = {"departments": ["31"], "open_only": True, "limit": 1}
+        exact = await boamp.search(cpv="72000000", **common)
+        prefix = await boamp.search(cpv="72", **common)
+        assert prefix.page.total >= exact.page.total
+        assert prefix.page.total > 0
+        rhone = await boamp.search(
+            cpv="9091", departments=["69"], published_from=date(2026, 1, 1), limit=1
+        )
+        assert rhone.page.total >= 0
+    finally:
+        await http.aclose()
+
+
+async def test_prefix_query_echo_is_compact(http, fixture_loader) -> None:
+    """An expanded CPV prefix must not flood the model with ~12 KB of OR clauses."""
+    import respx
+
+    from marches_publics_mcp.sources.boamp import BoampClient
+
+    with respx.mock(assert_all_called=True) as mock:
+        route = mock.get(url__startswith="https://").respond(json={"total_count": 0, "results": []})
+        result = await BoampClient(http).search(cpv="72", departments=["31"])
+    sent = route.calls[0].request.url.params["where"]
+    assert sent.count("search(donnees") > 100
+    assert result.query is not None and len(result.query) < 400
+    assert "<cpv prefix 72:" in result.query and "code_departement" in result.query

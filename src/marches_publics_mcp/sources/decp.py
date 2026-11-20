@@ -7,12 +7,13 @@ through an optional ``CompanyResolver``. Missing values are the string ``"CDL"``
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 from datetime import date
 from typing import Any, Literal
 
-from marches_publics_mcp.http import HttpClient
+from marches_publics_mcp.http import HttpClient, UpstreamError
 from marches_publics_mcp.models import (
     DecpAward,
     DecpRanking,
@@ -22,13 +23,19 @@ from marches_publics_mcp.models import (
     truncate,
 )
 from marches_publics_mcp.sources.entreprises import CompanyResolver
-from marches_publics_mcp.sources.ods import and_all, date_literal, quote
+from marches_publics_mcp.sources.ods import and_all, date_literal, in_list, quote
 
 DEFAULT_BASE_URL = (
     "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/"
     "decp-2022-marches-valides/records"
 )
+SOURCE = "decp"
+logger = logging.getLogger(__name__)
 PLACEHOLDER = "CDL"
+# Place-code types whose value starts with the department code (verified live, 2026-11-20).
+# Regions ("Code région": 75, 93...) and countries collide with department numbers, so they
+# are excluded; arrondissement/canton codes are rare and left out too.
+_DEPT_TYPECODES = ("Code postal", "Code département", "Code commune")
 MAX_PAGE = 100  # ODS hard limit per request
 MAX_WINDOW = 10_000  # ODS: offset + limit <= 10000
 
@@ -58,6 +65,39 @@ def _clean(value: Any) -> Any:
     if isinstance(value, str) and value.strip() in ("", PLACEHOLDER):
         return None
     return value
+
+
+def _as_int(value: Any, field: str) -> int | None:
+    """Parse an integer field; log a warning and return ``None`` when it is malformed."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.warning("malformed upstream value", extra={"source": SOURCE, "field": field})
+        return None
+
+
+def _as_float(value: Any, field: str) -> float | None:
+    """Parse a float field; log a warning and return ``None`` when it is malformed."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        logger.warning("malformed upstream value", extra={"source": SOURCE, "field": field})
+        return None
+
+
+def _as_date(value: Any, field: str) -> date | None:
+    """Parse an ISO date (first 10 chars); ``None`` with a warning when malformed."""
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        logger.warning("malformed upstream value", extra={"source": SOURCE, "field": field})
+        return None
 
 
 def _num(value: float) -> str:
@@ -137,9 +177,8 @@ class DecpClient:
                     "`department` must be a department code such as '31', '2A', '971'."
                 )
             prefixes = _CORSICA.get(dept, (dept,))
-            clauses.append(
-                " OR ".join(f"startswith(lieuexecution_code, {quote(p)})" for p in prefixes)
-            )
+            starts = " OR ".join(f"startswith(lieuexecution_code, {quote(p)})" for p in prefixes)
+            clauses.append(f"({in_list('lieuexecution_typecode', _DEPT_TYPECODES)}) AND ({starts})")
         if notified_from:
             clauses.append(f"datenotification >= {date_literal(notified_from)}")
         if notified_to:
@@ -219,10 +258,13 @@ class DecpClient:
             "limit": limit,
             "offset": offset,
         }
-        data = await self._http.get_json(self._url, params, source="decp")
-        rows = data.get("results", []) if isinstance(data, dict) else []
-        awards = [self._award(row) for row in rows]
-        total = int(data.get("total_count", len(awards))) if isinstance(data, dict) else 0
+        data = await self._http.get_json(self._url, params, source=SOURCE)
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            raise UpstreamError(SOURCE, "unexpected data from upstream")
+        awards = [self._award(row) for row in data["results"] if isinstance(row, dict)]
+        total = _as_int(data.get("total_count"), "total_count")
+        if total is None:
+            total = len(awards)
         if self._resolver is not None and awards:
             await self._fill_names(awards)
         nxt = offset + len(awards)
@@ -231,7 +273,7 @@ class DecpClient:
                 total=total,
                 offset=offset,
                 returned=len(awards),
-                next_offset=nxt if awards and nxt < min(total, MAX_WINDOW) else None,
+                next_offset=(nxt if awards and nxt < total and nxt + limit <= MAX_WINDOW else None),
             ),
             awards=awards,
             query=where,
@@ -255,12 +297,12 @@ class DecpClient:
             buyer_siret=_clean(row.get("acheteur_id")),
             supplier_sirets=sirets,
             supplier_names=[None] * len(sirets),
-            amount_eur=float(amount) if amount is not None else None,
-            notified=date.fromisoformat(str(notified)[:10]) if notified else None,
+            amount_eur=_as_float(amount, "montant"),
+            notified=_as_date(notified, "datenotification"),
             cpv=_clean(row.get("codecpv")),
             procedure=_clean(row.get("procedure")),
             place_code=_clean(row.get("lieuexecution_code")),
-            duration_months=int(duration) if duration is not None else None,
+            duration_months=_as_int(duration, "dureemois"),
             offers_received=int(offers) if offers is not None and str(offers).isdigit() else None,
         )
 
@@ -342,19 +384,21 @@ class DecpClient:
             self._http.get_json(self._url, params, source="decp"),
             self._http.get_json(self._url, count_params, source="decp"),
         )
-        rows = data.get("results", []) if isinstance(data, dict) else []
-        entries = [
-            RankEntry(
-                rank=i,
-                siret=str(row[field]),
-                contracts=int(row.get("n") or 0),
-                total_amount_eur=(
-                    round(float(row["total"]), 2) if row.get("total") is not None else None
-                ),
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            raise UpstreamError(SOURCE, "unexpected data from upstream")
+        entries = []
+        for row in data["results"]:
+            if not isinstance(row, dict) or not _clean(row.get(field)):
+                continue
+            amount = _as_float(row.get("total"), "total")
+            entries.append(
+                RankEntry(
+                    rank=len(entries) + 1,
+                    siret=str(row[field]),
+                    contracts=_as_int(row.get("n") or 0, "n") or 0,
+                    total_amount_eur=round(amount, 2) if amount is not None else None,
+                )
             )
-            for i, row in enumerate(rows, start=1)
-            if _clean(row.get(field))
-        ]
         if self._resolver is not None and entries:
             names = await self._resolver.names_for([e.siret for e in entries])
             for entry in entries:
@@ -375,7 +419,11 @@ class DecpClient:
             by=by,
             order=order,
             filters=filters,
-            total_contracts=int(count.get("total_count", 0)) if isinstance(count, dict) else 0,
+            total_contracts=(
+                (_as_int(count.get("total_count"), "total_count") or 0)
+                if isinstance(count, dict)
+                else 0
+            ),
             entries=entries,
             caveats=list(RANK_CAVEATS),
         )

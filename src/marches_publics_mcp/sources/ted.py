@@ -51,8 +51,9 @@ import html
 import logging
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from marches_publics_mcp.http import HttpClient, NotFoundError, UpstreamError
 from marches_publics_mcp.models import (
@@ -71,6 +72,7 @@ SOURCE = "ted"
 MAX_LIMIT = 250
 MAX_WINDOW = 15000
 LANG_PREFERENCE = ("fra", "eng")
+BRUSSELS = ZoneInfo("Europe/Brussels")
 _ID_RE = re.compile(r"^\d{1,8}-\d{4}$")
 _CPV_RE = re.compile(r"^\d{2,8}(-\d)?$")
 _COUNTRY_RE = re.compile(r"^[A-Z]{3}$")
@@ -162,7 +164,7 @@ def build_query(
     if published_to:
         clauses.append(f"publication-date<={published_to:%Y%m%d}")
     if open_only:
-        clauses.append(f"deadline-receipt-tender-date-lot>={(today or date.today()):%Y%m%d}")
+        clauses.append(f"deadline-receipt-tender-date-lot>={(today or _today()):%Y%m%d}")
     if notice_type:
         kind = notice_type.strip()
         if not _NOTICE_TYPE_RE.match(kind):
@@ -172,8 +174,13 @@ def build_query(
         clauses.append(f"notice-type IN ({kind})")
     if not clauses:
         # TED rejects an empty query; "all notices since the start of the current year" is safe.
-        clauses.append(f"publication-date>={date.today().year}0101")
+        clauses.append(f"publication-date>={_today().year}0101")
     return " AND ".join(clauses) + " SORT BY publication-date DESC"
+
+
+def _today() -> date:
+    """Today's date in Europe/Brussels (TED publishes on Central European time)."""
+    return datetime.now(BRUSSELS).date()
 
 
 def _unescape(text: str) -> str:
@@ -240,6 +247,24 @@ def _day(value: Any) -> str | None:
     return days[0] if days else None
 
 
+def _deadline(value: Any, today: date | None = None) -> str | None:
+    """Pick the tender deadline among lot deadlines: earliest one not yet past, else latest.
+
+    Args:
+        value: One date string or a list (one per lot, e.g. ``2026-12-01+01:00``).
+        today: Override for "today" in Europe/Brussels (tests).
+
+    Returns:
+        An ISO day (``YYYY-MM-DD``) or ``None`` when there is no deadline.
+    """
+    days = sorted(v[:10] for v in _as_list(value))
+    if not days:
+        return None
+    limit = (today or _today()).isoformat()
+    upcoming = [d for d in days if d >= limit]
+    return upcoming[0] if upcoming else days[-1]
+
+
 def _number(value: Any) -> float | None:
     """Parse a TED amount (string or number, first of a list); 0 means unknown -> ``None``."""
     if isinstance(value, list):
@@ -253,11 +278,20 @@ def _number(value: Any) -> float | None:
 
 def _link(links: Any, kind: str) -> str | None:
     """Pick a notice link of ``kind`` (``html``/``pdf``): French, then English, then any."""
-    group = (links or {}).get(kind) or {}
+    group = links.get(kind) if isinstance(links, dict) else None
+    if not isinstance(group, dict):
+        return None
     for lang in ("FRA", "ENG", *group):
         if group.get(lang):
             return str(group[lang])
     return None
+
+
+def _str_or_none(value: Any) -> str | None:
+    """Return ``value`` as a string when it is a non-empty scalar, else ``None``."""
+    if value is None or isinstance(value, dict | list):
+        return None
+    return str(value).strip() or None
 
 
 def _first(value: Any) -> str | None:
@@ -269,13 +303,13 @@ def _parse_notice(raw: dict[str, Any]) -> TedNotice:
     """Map one raw TED notice to ``TedNotice``."""
     title = _pick_lang(raw.get("title-proc")) or _pick_lang(raw.get("notice-title"))
     return TedNotice(
-        publication_number=str(raw["publication-number"]),
+        publication_number=str(raw.get("publication-number", "")),
         title=truncate(title),
         buyer=truncate(_pick_lang(raw.get("buyer-name"))),
         buyer_country=_first(raw.get("buyer-country")),
         published=_day(raw.get("publication-date")),
-        deadline=_day(raw.get("deadline-receipt-tender-date-lot")),
-        notice_type=raw.get("notice-type"),
+        deadline=_deadline(raw.get("deadline-receipt-tender-date-lot")),
+        notice_type=_str_or_none(raw.get("notice-type")),
         cpv=_as_list(raw.get("classification-cpv")),
         places=_as_list(raw.get("place-of-performance")),
         url=_link(raw.get("links"), "html"),
@@ -304,7 +338,7 @@ def _parse_detail(raw: dict[str, Any]) -> TedNoticeDetail:
         description=truncate(description, TEXT_MAX),
         estimated_value=estimated,
         currency=currency if estimated is not None else award_cur,
-        procedure=raw.get("procedure-type"),
+        procedure=_str_or_none(raw.get("procedure-type")),
         winners=_all_texts(raw.get("winner-name")),
         award_value=award,
         pdf_url=_link(raw.get("links"), "pdf"),
@@ -385,8 +419,20 @@ class TedClient:
         data = await self._post(
             {"query": query, "fields": LIST_FIELDS, "limit": limit, "page": page}
         )
-        notices = [_parse_notice(n) for n in data.get("notices") or []]
-        total = int(data.get("totalNoticeCount") or 0)
+        raw_notices = data.get("notices") or []
+        if not isinstance(raw_notices, list):
+            raise UpstreamError(SOURCE, "unexpected data from upstream")
+        notices: list[TedNotice] = []
+        for raw in raw_notices:
+            try:
+                notices.append(_parse_notice(raw))
+            except (TypeError, ValueError, AttributeError):
+                logger.warning("skipping malformed TED notice", extra={"source": SOURCE})
+        try:
+            total = int(data.get("totalNoticeCount") or 0)
+        except (TypeError, ValueError):
+            logger.warning("malformed totalNoticeCount", extra={"source": SOURCE})
+            total = len(notices)
         offset = (page - 1) * limit
         has_next = offset + limit < total and (page + 1) * limit <= MAX_WINDOW
         logger.info("ted search", extra={"source": SOURCE, "total": total, "page": page})
@@ -399,6 +445,7 @@ class TedClient:
             ),
             notices=notices,
             query=query,
+            next_page=page + 1 if has_next else None,
         )
 
     async def get_notice(self, publication_number: str) -> TedNoticeDetail:
@@ -431,4 +478,7 @@ class TedClient:
         notices = data.get("notices") or []
         if not notices:
             raise NotFoundError(SOURCE, f"no TED notice {number}", 404)
-        return _parse_detail(notices[0])
+        try:
+            return _parse_detail(notices[0])
+        except (TypeError, ValueError, AttributeError, KeyError) as exc:
+            raise UpstreamError(SOURCE, "unexpected data from upstream") from exc

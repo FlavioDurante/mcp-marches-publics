@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
 from datetime import date
@@ -17,10 +18,12 @@ from typing import Annotated, Any, Literal, TypeVar
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from mcp.shared.exceptions import MCPError
+from mcp.types import INVALID_PARAMS, ToolAnnotations
 from pydantic import BaseModel, Field
 
 from marches_publics_mcp import __version__, geo
+from marches_publics_mcp import cpv as cpv_codes
 from marches_publics_mcp.http import HttpClient, NotFoundError, UpstreamError
 from marches_publics_mcp.logging_setup import setup_logging
 from marches_publics_mcp.models import (
@@ -45,18 +48,24 @@ Which tool for which question
   search_decp_awards (list) or rank_decp_parties (aggregate "who buys/wins the most").
 - Tenders or notices published EU-wide or abroad -> search_ted_notices, then get_ted_notice.
 - A SIRET/SIREN -> company name: lookup_company.
+- Words -> CPV codes (e.g. "cleaning", "travaux de voirie"): search_cpv_codes.
 Do not use TED for French-only questions (BOAMP is fresher and filters by department). DECP
 only lists awarded contracts, never open tenders.
 
 Conventions
-- Dates are ISO (YYYY-MM-DD). CPV codes are digits only (no check digit): 8 digits for a notice
-  filter, 2-8 digits as a prefix for DECP (e.g. 72 = IT services).
-- Lists are paginated: pass the `next_offset` of a result as `offset` (TED: `page` + 1).
+- Dates are ISO (YYYY-MM-DD). CPV codes are digits only (no check digit). A 2-7 digit prefix
+  covers the whole branch (72 = all IT services) on BOAMP, DECP and TED; an 8-digit code on BOAMP
+  matches that exact code only. Unsure of the code? search_cpv_codes("nettoyage").
+- Lists are paginated: pass the `next_offset` of a result as `offset` (TED: pass `next_page`
+  as `page`).
   Default limit is 10, maximum 50. Prefer narrowing filters over paging through many pages.
 - DECP carries only SIRET identifiers; buyer and supplier names are resolved automatically
   through the public company directory (a name may be null when unknown).
 - Results are open data and may lag the source by days; they are not legal advice.
 """
+
+# recherche-entreprises documents 7 requests/s: stay a bit below.
+_MIN_INTERVAL = {"recherche-entreprises.api.gouv.fr": 0.15}
 
 _RO = ToolAnnotations(readOnlyHint=True, openWorldHint=True, idempotentHint=True)
 
@@ -64,7 +73,7 @@ _RO = ToolAnnotations(readOnlyHint=True, openWorldHint=True, idempotentHint=True
 Limit = Annotated[int, Field(ge=1, le=50, description="Maximum number of results per page (1-50).")]
 Offset = Annotated[
     int,
-    Field(ge=0, le=9900, description="Pagination offset: use `next_offset` of the previous page."),
+    Field(ge=0, le=9999, description="Pagination offset: use `next_offset` of the previous page."),
 ]
 Keywords = Annotated[
     str | None,
@@ -81,6 +90,17 @@ CpvExact = Annotated[
         pattern=r"^\d{8}$",
         description="CPV code, 8 digits, no check digit (e.g. 72000000 = IT services).",
         examples=["72000000", "45000000"],
+    ),
+]
+CpvBoamp = Annotated[
+    str | None,
+    Field(
+        pattern=r"^\d{2,8}$",
+        description=(
+            "CPV prefix (2-7 digits, whole branch: 72 = all IT services, max 300 codes) or exact "
+            "8-digit code (that code only). No check digit."
+        ),
+        examples=["72", "9091", "72212000"],
     ),
 ]
 CpvPrefix = Annotated[
@@ -135,6 +155,19 @@ class TedSearchResponse(TedSearchResult, _Hinted):
     """TED search result with an empty-result hint."""
 
 
+class CpvMatch(BaseModel):
+    """One CPV code with its label."""
+
+    code: str
+    label: str
+
+
+class CpvSearchResult(_Hinted):
+    """CPV codes matching a text query."""
+
+    matches: list[CpvMatch]
+
+
 class CompanyInfo(_Hinted):
     """Result of a company-name lookup."""
 
@@ -161,7 +194,7 @@ class _Clients:
     @property
     def http(self) -> HttpClient:
         if self._http is None:
-            self._http = HttpClient()
+            self._http = HttpClient(min_interval=_MIN_INTERVAL)
             self._owns_http = True
         return self._http
 
@@ -270,7 +303,7 @@ def build_server(
     @server.tool(annotations=_RO, title="Search BOAMP notices (France)")
     async def search_boamp_notices(
         keywords: Keywords = None,
-        cpv: CpvExact = None,
+        cpv: CpvBoamp = None,
         region: Annotated[
             str | None,
             Field(
@@ -311,7 +344,7 @@ def build_server(
 
         Use for: open calls for tenders and published notices in France, filtered by topic,
         CPV code, region/department, buyer or date. Example: open IT-services tenders in
-        Occitanie -> cpv="72000000", region="Occitanie", open_only=true, notice_kind="tender".
+        Occitanie -> cpv="72", region="Occitanie", open_only=true, notice_kind="tender".
         Do NOT use for: contract amounts or winners over time or rankings (use
         search_decp_awards / rank_decp_parties), nor for notices outside France (use
         search_ted_notices). Returns a compact list; call get_boamp_notice with an `id` for
@@ -502,7 +535,8 @@ def build_server(
         contracts seen from the EU side. Example: cpv="72000000", countries=["DEU","AUT"],
         open_only=true. Do NOT use for France-only searches by department/region (use
         search_boamp_notices) or for award amounts/rankings in France (DECP tools). Pagination
-        is by `page` (next page = page + 1). Call get_ted_notice with a `publication_number`.
+        is by `page`: pass the result's `next_page` as `page` (null = no more pages); `next_offset`
+        is informational only. Call get_ted_notice with a `publication_number`.
         """
         bad = [c for c in countries or [] if len(c) != 3 or not c.isalpha()]
         if bad:
@@ -565,9 +599,42 @@ def build_server(
         Use when a DECP/BOAMP result shows only an identifier. Do NOT use to search by name
         or to get financial data. DECP tools already resolve names; this is for ad-hoc checks.
         """
-        name = await _guard("entreprises", clients.resolver.name_for(identifier))
+        try:
+            name = await clients.resolver.lookup(identifier)
+        except UpstreamError as exc:
+            raise ToolError("recherche-entreprises unavailable, retry later") from exc
         hint = None if name else "Unknown identifier: check the digits or try the 9-digit SIREN."
         return CompanyInfo(identifier=identifier, name=name, hint=hint)
+
+    # ------------------------------------------------------------------ CPV nomenclature
+    @server.tool(annotations=_RO, title="Find CPV codes from words")
+    async def search_cpv_codes(
+        text: Annotated[
+            str,
+            Field(
+                min_length=2,
+                max_length=100,
+                description="Words to look up in CPV labels (prefix match, accents ignored).",
+                examples=["nettoyage", "maintenance logiciel", "road works"],
+            ),
+        ],
+        lang: Annotated[Literal["fr", "en"], Field(description="Label language of `text`.")] = "fr",
+        limit: Annotated[int, Field(ge=1, le=50, description="Max codes returned.")] = 10,
+    ) -> CpvSearchResult:
+        """Find CPV 2008 codes whose label matches the words (official EU nomenclature, offline).
+
+        Use before a search when the user names an activity instead of a code. Shorter codes
+        (e.g. 90910000) are broader; pass their significant digits as a prefix ("9091") to the
+        search tools. Do NOT use to find notices: use the search_* tools with the code found.
+        """
+        try:
+            found = cpv_codes.search(text, lang=lang, limit=limit)
+        except ValueError as exc:
+            raise ToolError(f"Invalid request: {exc}") from exc
+        hint = None if found else "No CPV label matched. Try a shorter word or the other language."
+        return CpvSearchResult(
+            matches=[CpvMatch(code=c, label=label) for c, label in found], hint=hint
+        )
 
     # ------------------------------------------------------------------ resources and prompt
     @server.resource(
@@ -597,6 +664,15 @@ def build_server(
         description="Monitoring workflow: open tenders for a CPV code in a region, then context.",
     )
     def veille_marches(cpv: str, region: str) -> str:
+        if not re.fullmatch(r"\d{2,8}", cpv.strip()):
+            raise MCPError(
+                INVALID_PARAMS, f"`cpv` must be 2 to 8 digits, e.g. 72000000 (got {cpv!r})."
+            )
+        try:
+            geo.region_departments(region)
+        except ValueError as exc:
+            raise MCPError(INVALID_PARAMS, str(exc)) from exc
+        cpv, region = cpv.strip(), region.strip()
         return (
             f"Run a procurement watch for CPV {cpv} in the region {region}.\n"
             f"1. search_boamp_notices(cpv='{cpv}', region='{region}', open_only=true, "

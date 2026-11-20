@@ -15,7 +15,6 @@ from typing import Any
 ANSWER_TYPES = ("exact", "set", "number_tolerance", "contains", "count_range")
 
 _JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
-_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 
 
 @dataclass(frozen=True)
@@ -43,8 +42,34 @@ def normalize_text(value: Any) -> str:
     return compact if compact.isdigit() else text
 
 
+_SPACES_BETWEEN_DIGITS = re.compile(r"(?<=\d)[\s\u00a0\u202f](?=\d)")
+_NUMBER_TOKEN = re.compile(r"-?\d(?:[\d.,]*\d)?")
+_THOUSANDS_COMMA = re.compile(r"-?\d{1,3}(?:,\d{3})+")
+_THOUSANDS_DOT = re.compile(r"-?\d{1,3}(?:\.\d{3}){2,}")
+_NUMERIC_ONLY = re.compile(r"-?[\d\s\u00a0\u202f.,]+")
+
+
+def _token_to_float(token: str) -> float:
+    """Convert a digits/``.``/``,`` token, deciding which separator is the decimal one."""
+    if "," in token and "." in token:
+        # The last separator is the decimal mark, the other one groups thousands.
+        decimal = "," if token.rfind(",") > token.rfind(".") else "."
+        group = "." if decimal == "," else ","
+        token = token.replace(group, "").replace(decimal, ".")
+    elif "," in token:
+        token = (
+            token.replace(",", "") if _THOUSANDS_COMMA.fullmatch(token) else token.replace(",", ".")
+        )
+    elif _THOUSANDS_DOT.fullmatch(token):
+        token = token.replace(".", "")
+    return float(token)
+
+
 def to_number(value: Any) -> float | None:
     """Parse a number from an int/float or a string such as ``"1 234,5"``.
+
+    Handles thousands separators (``"1,234"``, ``"1,234,567"``, ``"1 234"``) and decimal commas
+    (``"1,5"``, ``"1 234,56"``).
 
     Args:
         value: Number or text.
@@ -58,11 +83,23 @@ def to_number(value: Any) -> float | None:
         return float(value)
     if not isinstance(value, str):
         return None
-    text = value.replace(" ", "").replace(" ", "").replace(" ", "")
-    decimal_comma = "," in text and "." not in text
-    text = text.replace(",", "." if decimal_comma else "")
-    match = _NUMBER.search(text)
-    return float(match.group()) if match else None
+    text = _SPACES_BETWEEN_DIGITS.sub("", value)
+    match = _NUMBER_TOKEN.search(text)
+    return _token_to_float(match.group()) if match else None
+
+
+def _same_decimal_number(left: Any, right: Any) -> bool:
+    """True when both values are purely numeric, one with a decimal mark, and equal.
+
+    Leading-zero codes such as ``"01"`` vs ``"1"`` are left to text comparison.
+    """
+    texts = [str(left).strip(), str(right).strip()]
+    if not all(_NUMERIC_ONLY.fullmatch(t) for t in texts):
+        return False
+    if not any("." in t or "," in t for t in texts):
+        return False
+    first, second = to_number(texts[0]), to_number(texts[1])
+    return first is not None and first == second
 
 
 # ---------------------------------------------------------------- extraction
@@ -126,6 +163,28 @@ def parse_answer_block(text: str) -> tuple[bool, Any]:
     return False, None
 
 
+def pick_agent_value(answer_type: str, text: str) -> tuple[Any, str | None]:
+    """Choose what to score in an agent's final message.
+
+    The JSON answer block is the only thing scored when present. Free text is a fallback for
+    ``contains`` questions only, when the block is missing.
+
+    Args:
+        answer_type: The item's answer type.
+        text: Final assistant text.
+
+    Returns:
+        ``(value, scored_on)`` with ``scored_on`` in ``"json_block"``, ``"free_text"`` or
+        ``None`` (nothing to score; ``value`` is ``None``).
+    """
+    found, value = parse_answer_block(text)
+    if found:
+        return value, "json_block"
+    if answer_type == "contains" and text.strip():
+        return text, "free_text"
+    return None, None
+
+
 # ---------------------------------------------------------------- scoring
 def _as_list(value: Any) -> list[Any]:
     if isinstance(value, list | tuple | set):
@@ -172,7 +231,9 @@ def score_answer(
     if actual is None:
         return ScoreResult(False, "no answer")
     if answer_type == "exact":
-        ok = normalize_text(actual) == normalize_text(expected)
+        ok = normalize_text(actual) == normalize_text(expected) or _same_decimal_number(
+            actual, expected
+        )
         return ScoreResult(ok, f"got {actual!r}, expected {expected!r}")
     if answer_type == "set":
         got = {normalize_text(v) for v in _as_list(actual)}

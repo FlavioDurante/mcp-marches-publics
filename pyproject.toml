@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -34,7 +34,7 @@ packages = ["src/marches_publics_mcp"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "eval"]
 markers = ["integration: hits the real public APIs (disabled by default, run with -m integration)"]
 addopts = "-m 'not integration'"
 

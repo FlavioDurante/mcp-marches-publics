@@ -11,7 +11,7 @@ import httpx
 import pytest
 import respx
 
-from marches_publics_mcp.http import HttpClient
+from marches_publics_mcp.http import HttpClient, UpstreamError
 from marches_publics_mcp.sources.entreprises import CompanyResolver
 
 BASE = "https://recherche-entreprises.test"
@@ -134,3 +134,29 @@ async def test_live_lookup() -> None:
         assert await CompanyResolver(client).name_for(PARIS) == "VILLE DE PARIS"
     finally:
         await client.aclose()
+
+
+@respx.mock
+async def test_lookup_distinguishes_unknown_from_upstream_failure(
+    resolver: CompanyResolver,
+) -> None:
+    respx.get(f"{BASE}/search").respond(json={"results": []})
+    assert await resolver.lookup("00000000000000") is None
+    respx.get(f"{BASE}/search").respond(500, json={"message": "boom"})
+    with pytest.raises(UpstreamError):
+        await resolver.lookup(PARIS)
+    assert await resolver.name_for(PARIS) is None  # bulk path never raises
+
+
+@respx.mock
+async def test_unknown_is_memoised_but_failure_is_not(resolver: CompanyResolver) -> None:
+    route = respx.get(f"{BASE}/search").respond(json={"results": []})
+    assert await resolver.lookup(PARIS) is None
+    assert await resolver.lookup(PARIS) is None
+    assert route.call_count == 1
+
+
+def test_memo_is_bounded_ttl_cache(resolver: CompanyResolver) -> None:
+    from marches_publics_mcp.http import _TTLCache
+
+    assert isinstance(resolver._memo, _TTLCache)

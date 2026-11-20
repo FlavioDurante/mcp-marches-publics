@@ -17,7 +17,7 @@ from marches_publics_mcp import __version__
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = f"mcp-marches-publics/{__version__} (+https://github.com/; open-source MCP server)"
+USER_AGENT = f"mcp-marches-publics/{__version__} (open-source MCP server)"
 RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 

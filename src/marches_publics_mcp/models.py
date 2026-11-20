@@ -29,7 +29,9 @@ class PageInfo(BaseModel):
     offset: int
     returned: int
     next_offset: int | None = Field(
-        default=None, description="Pass as `offset` to get the next page; null when done."
+        default=None,
+        description="Pass as `offset` to get the next page; null when done. "
+        "Informational for TED, which pages with `next_page` instead.",
     )
 
 
@@ -152,6 +154,9 @@ class TedSearchResult(BaseModel):
     page: PageInfo
     notices: list[TedNotice]
     query: str | None = Field(default=None, description="TED expert query actually sent.")
+    next_page: int | None = Field(
+        default=None, description="Pass as `page` to get the next page; null when done."
+    )
 
 
 class TedNoticeDetail(TedNotice):

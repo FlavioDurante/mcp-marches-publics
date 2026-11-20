@@ -245,3 +245,50 @@ async def test_live_search_and_rank() -> None:
         assert rank.entries[0].contracts >= rank.entries[-1].contracts
     finally:
         await http.aclose()
+
+
+@respx.mock
+async def test_department_filter_excludes_region_and_country_codes(client: DecpClient) -> None:
+    route = respx.get(URL).respond(json={"total_count": 0, "results": []})
+    await client.search(department="75")
+    where = _where(route) or ""
+    assert 'lieuexecution_typecode IN ("Code postal", "Code département", "Code commune")' in where
+    assert "Code région" not in where and "Code pays" not in where
+    assert 'startswith(lieuexecution_code, "75")' in where
+
+
+@respx.mock
+async def test_malformed_row_values_become_none(
+    client: DecpClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    row = {
+        "id": "x1",
+        "montant": "n/a",
+        "datenotification": "not-a-date",
+        "dureemois": "twelve",
+        "objet": "Marché",
+    }
+    respx.get(URL).respond(json={"total_count": "oops", "results": [row]})
+    with caplog.at_level("WARNING"):
+        res = await client.search()
+    award = res.awards[0]
+    assert (award.amount_eur, award.notified, award.duration_months) == (None, None, None)
+    assert res.page.total == 1
+    assert any("malformed upstream value" in r.message for r in caplog.records)
+
+
+@respx.mock
+async def test_unusable_response_is_upstream_error(client: DecpClient) -> None:
+    respx.get(URL).respond(json=["not", "a", "dict"])
+    with pytest.raises(UpstreamError, match="unexpected data"):
+        await client.search()
+
+
+@respx.mock
+async def test_next_offset_never_exceeds_window(client: DecpClient) -> None:
+    rows = [{"id": str(i)} for i in range(50)]
+    respx.get(URL).respond(json={"total_count": 50000, "results": rows})
+    res = await client.search(offset=9900, limit=50)
+    assert res.page.next_offset == 9950  # 9950 + 50 == 10000: still a valid request
+    res = await client.search(offset=9950, limit=50)
+    assert res.page.next_offset is None  # the next page would leave the upstream window

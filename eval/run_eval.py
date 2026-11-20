@@ -24,7 +24,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from scoring import ANSWER_TYPES, extract_path, parse_answer_block, score_answer, summarize
+from scoring import ANSWER_TYPES, extract_path, pick_agent_value, score_answer, summarize
 
 EVAL_DIR = Path(__file__).parent
 DEFAULT_QUESTIONS = EVAL_DIR / "questions.yaml"
@@ -464,21 +464,18 @@ async def run_agent(
         for item in items:
             started = time.perf_counter()
             out = await agent.run(system, item["question"], tools, call_tool)
-            found, value = parse_answer_block(out["text"])
-            if item["answer_type"] == "contains":
-                # Free text is acceptable here: look for the facts in the answer and the text.
-                value = [value, out["text"]] if found else out["text"]
-                passed, detail = score_item(item, value)
-            elif found:
-                passed, detail = score_item(item, value)
-            else:
+            value, scored_on = pick_agent_value(item["answer_type"], out["text"])
+            if scored_on is None:
                 passed, detail = False, "no JSON answer block"
+            else:
+                passed, detail = score_item(item, value)
             rows.append(
                 {
                     "id": item["id"],
                     "answer_type": item["answer_type"],
                     "passed": passed,
                     "detail": detail,
+                    "scored_on": scored_on,
                     "expected": item["expected"],
                     "actual": value,
                     "final_text": out["text"],
@@ -520,8 +517,11 @@ def main(argv: list[str] | None = None) -> int:
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    if args.only:
+    if args.only is not None:
         items = [i for i in items if i["id"] in set(args.only)]
+        if not items:
+            print(f"--only matched no question id: {' '.join(args.only)}", file=sys.stderr)
+            return 2
     if args.mode == "oracle":
         rows = asyncio.run(run_oracle(items))
         label = "gold"

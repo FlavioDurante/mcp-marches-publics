@@ -15,6 +15,7 @@ from marches_publics_mcp.http import HttpClient, NotFoundError, UpstreamError
 from marches_publics_mcp.sources.ted import (
     DEFAULT_BASE_URL,
     TedClient,
+    _deadline,
     _pick_lang,
     build_query,
 )
@@ -114,8 +115,10 @@ async def test_search_page_two_offsets_and_last_page(http: HttpClient) -> None:
     result = await client.search(page=2, limit=10)
     assert _sent(route)["page"] == 2
     assert (result.page.offset, result.page.next_offset) == (10, 20)
+    assert result.next_page == 3
     result = await client.search(page=3, limit=10)
     assert (result.page.offset, result.page.next_offset) == (20, None)
+    assert result.next_page is None
 
 
 @respx.mock
@@ -247,3 +250,53 @@ async def test_live_open_cpv_and_award() -> None:
             await ted.search(notice_type="not-a-type-zz", limit=1)
     finally:
         await client.aclose()
+
+
+def test_deadline_picks_earliest_upcoming_else_latest() -> None:
+    today = date(2026, 11, 20)
+    lots = ["2026-11-01+01:00", "2026-12-15+01:00", "2026-11-25+01:00"]
+    assert _deadline(lots, today) == "2026-11-25"
+    assert _deadline(["2026-11-20+01:00", "2026-11-01+01:00"], today) == "2026-11-20"
+    assert _deadline(["2026-10-01+01:00", "2026-11-01+01:00"], today) == "2026-11-01"
+    assert _deadline(None, today) is None
+    assert _deadline("2026-12-01+01:00", today) == "2026-12-01"
+
+
+def test_today_is_computed_in_brussels(monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from marches_publics_mcp.sources import ted
+
+    class FakeDatetime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:  # type: ignore[override]
+            assert tz == ZoneInfo("Europe/Brussels")
+            return datetime(2026, 11, 21, 0, 30, tzinfo=tz)
+
+    monkeypatch.setattr(ted, "datetime", FakeDatetime)
+    assert ted._today() == date(2026, 11, 21)
+
+
+@respx.mock
+async def test_malformed_upstream_values_do_not_raise_value_error(
+    http: HttpClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    payload = {
+        "notices": [{"publication-number": "1-2026", "links": ["bad"], "notice-type": {"x": 1}}],
+        "totalNoticeCount": "many",
+    }
+    respx.post(DEFAULT_BASE_URL).mock(return_value=httpx.Response(200, json=payload))
+    with caplog.at_level("WARNING"):
+        result = await TedClient(http).search()
+    assert result.page.total == 1 and result.notices[0].url is None
+    assert result.notices[0].notice_type is None
+
+
+@respx.mock
+async def test_unusable_notices_field_is_upstream_error(http: HttpClient) -> None:
+    respx.post(DEFAULT_BASE_URL).mock(
+        return_value=httpx.Response(200, json={"notices": "oops", "totalNoticeCount": 1})
+    )
+    with pytest.raises(UpstreamError, match="unexpected data"):
+        await TedClient(http).search()

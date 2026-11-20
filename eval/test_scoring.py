@@ -13,6 +13,7 @@ from scoring import (
     extract_path,
     normalize_text,
     parse_answer_block,
+    pick_agent_value,
     score_answer,
     summarize,
     to_number,
@@ -30,6 +31,12 @@ def test_normalize_text_accents_and_digits() -> None:
         (5, 5.0),
         ("1 234,5", 1234.5),
         ("1,234.5", 1234.5),
+        ("1,234", 1234.0),
+        ("1,234,567", 1234567.0),
+        ("1,5", 1.5),
+        ("1 234,56", 1234.56),
+        ("1.234,56", 1234.56),
+        ("12,50", 12.5),
         ("environ 220 avis", 220.0),
         ("n/a", None),
     ],
@@ -131,3 +138,18 @@ def test_summarize() -> None:
     assert s["invalid_call_rate"] == 0.25
     assert s["latency_mean_s"] == 2.0
     assert summarize([])["success_rate"] is None
+
+
+def test_exact_treats_decimal_zero_as_equal_but_keeps_codes() -> None:
+    assert score_answer("exact", "1", "1.0").passed
+    assert score_answer("exact", 1, "1,0").passed
+    assert not score_answer("exact", "01", "1").passed
+    assert not score_answer("exact", "1.5", "1").passed
+
+
+def test_pick_agent_value_scores_block_only_when_present() -> None:
+    block = 'blabla 220\n```json\n{"answer": ["x"]}\n```'
+    assert pick_agent_value("contains", block) == (["x"], "json_block")
+    assert pick_agent_value("contains", "free text") == ("free text", "free_text")
+    assert pick_agent_value("exact", "free text") == (None, None)
+    assert pick_agent_value("contains", "  ") == (None, None)

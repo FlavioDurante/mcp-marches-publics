@@ -165,3 +165,8 @@ async def test_pacing_waits_between_calls_to_same_host(monkeypatch: pytest.Monke
         assert len(waits) == 1 and 0 < waits[0] <= 5.0
     finally:
         await client.aclose()
+
+
+def test_user_agent_has_no_placeholder_url() -> None:
+    expected = f"mcp-marches-publics/{http_module.__version__} (open-source MCP server)"
+    assert expected == http_module.USER_AGENT

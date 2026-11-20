@@ -31,6 +31,7 @@ TOOLS = {
     "search_ted_notices",
     "get_ted_notice",
     "lookup_company",
+    "search_cpv_codes",
 }
 
 
@@ -93,8 +94,16 @@ class FakeTed:
 
 
 class FakeResolver:
-    async def name_for(self, siret: str) -> str | None:
+    async def lookup(self, siret: str) -> str | None:
+        if siret.startswith("5"):
+            raise UpstreamError("entreprises", "HTTP 503", 503)
         return "ACME SAS" if siret.startswith("3") else None
+
+    async def name_for(self, siret: str) -> str | None:
+        try:
+            return await self.lookup(siret)
+        except UpstreamError:
+            return None
 
 
 def _server(**overrides: Any) -> Any:
@@ -190,7 +199,8 @@ async def test_ted_and_lookup() -> None:
 @pytest.mark.parametrize(
     ("tool", "args"),
     [
-        ("search_boamp_notices", {"cpv": "7200"}),
+        ("search_boamp_notices", {"cpv": "7"}),
+        ("search_cpv_codes", {"text": "x"}),
         ("search_boamp_notices", {"published_from": "yesterday"}),
         ("search_boamp_notices", {"limit": 99}),
         ("search_decp_awards", {"cpv_prefix": "7"}),
@@ -244,3 +254,67 @@ async def test_stdio_smoke() -> None:
     async with Client(params) as c:
         names = {t.name for t in (await c.list_tools()).tools}
     assert names == TOOLS
+
+
+async def test_lookup_company_upstream_failure_is_not_unknown_identifier() -> None:
+    server, _ = _server()
+    async with Client(server) as c:
+        res = await c.call_tool("lookup_company", {"identifier": "5" * 9})
+    assert res.is_error
+    assert "unavailable, retry later" in res.content[0].text
+    assert "Unknown identifier" not in res.content[0].text
+
+
+async def test_default_http_client_paces_recherche_entreprises() -> None:
+    from marches_publics_mcp.server import _Clients
+
+    clients = _Clients(None, None, None, None, None)
+    try:
+        assert clients.http._min_interval == {"recherche-entreprises.api.gouv.fr": 0.15}
+    finally:
+        await clients.aclose()
+
+
+async def test_offset_bound_matches_client_window() -> None:
+    server, _ = _server()
+    async with Client(server) as c:
+        tools = {t.name: t for t in (await c.list_tools()).tools}
+    schema = tools["search_decp_awards"].input_schema["properties"]["offset"]
+    assert schema["maximum"] == 9999
+    assert "next_page" in (tools["search_ted_notices"].description or "")
+
+
+@pytest.mark.parametrize(
+    ("args", "fragment"),
+    [
+        ({"cpv": "abc", "region": "Occitanie"}, "cpv"),
+        ({"cpv": "72000000", "region": "Atlantide"}, "Atlantide"),
+    ],
+)
+async def test_prompt_validates_arguments(args: dict[str, str], fragment: str) -> None:
+    from mcp.shared.exceptions import MCPError
+
+    server, _ = _server()
+    async with Client(server) as c:
+        with pytest.raises(MCPError) as exc:
+            await c.get_prompt("veille_marches", args)
+    assert fragment in str(exc.value)
+
+
+async def test_search_cpv_codes_uses_bundled_nomenclature() -> None:
+    server, _ = _server()
+    async with Client(server) as c:
+        hit = await c.call_tool("search_cpv_codes", {"text": "nettoyage", "limit": 5})
+        miss = await c.call_tool("search_cpv_codes", {"text": "zzzzqqq"})
+    matches = hit.structured_content["matches"]
+    assert matches and all(m["code"].isdigit() and len(m["code"]) == 8 for m in matches)
+    assert any("nettoyage" in m["label"].lower() for m in matches)
+    assert miss.structured_content["matches"] == [] and miss.structured_content["hint"]
+
+
+async def test_boamp_accepts_cpv_prefix() -> None:
+    server, clients = _server()
+    async with Client(server) as c:
+        res = await c.call_tool("search_boamp_notices", {"cpv": "72"})
+    assert not res.is_error
+    assert clients["boamp"].calls[0]["cpv"] == "72"

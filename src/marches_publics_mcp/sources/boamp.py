@@ -9,9 +9,16 @@ Facts verified live against the upstream dataset (2026-11-20), which drive the d
   ``DIVERS``) and is not used for filtering: ``nature`` carries the tender/award distinction.
 * There is no CPV field. The code only lives inside the ``donnees`` JSON text, so the CPV filter
   is ``search(donnees, "<8-digit code>")``: an exact token match (a full 8-digit code, with or
-  without its ``-<check digit>`` suffix). Prefixes are NOT usable: ``search(donnees, "72*")``
+  without its ``-<check digit>`` suffix). Wildcards are NOT usable: ``search(donnees, "72*")``
   matches any token starting with 72 (dates, SIRET, ...) and returned ~200k noise rows.
-  There is no CPV hierarchy either: ``72000000`` does not match ``72212000``.
+  There is no CPV hierarchy either: ``72000000`` does not match ``72212000``. A 2-7 digit prefix
+  is therefore expanded with the official nomenclature (``cpv.expand``) into
+  ``((search(donnees, "c1") OR ...) OR (...))``. Two upstream limits (measured live 2026-11-20)
+  shape that: ODSQL rejects a *flat* clause of ~250+ expressions (HTTP 400 "too many
+  expressions", counted together with the other filters), but accepts the same terms grouped in
+  parenthesised chunks of 50; and the GET URL is rejected (414) around 20-30 KB, i.e. ~600+
+  codes. Hence ``CPV_MAX_CODES = 300`` (~12 KB). Division ``72`` (252 codes) works; ``45`` (822)
+  must be narrowed. Batching into several requests is not an option (counts would be wrong).
 * ``search(objet, "a b")`` is a token AND over the title; it is what ``keywords`` uses.
 * ``code_departement`` is multivalued and stored without zero padding for 1-9 (``"4"`` not
   ``"04"``); ``IN (...)`` matches if any value is in the list. Overseas codes are 3 digits.
@@ -31,6 +38,7 @@ from collections.abc import Iterator
 from datetime import date
 from typing import Any, Literal
 
+from marches_publics_mcp import cpv as cpv_nomenclature
 from marches_publics_mcp.http import HttpClient, NotFoundError
 from marches_publics_mcp.models import (
     TEXT_MAX,
@@ -58,6 +66,8 @@ LIST_FIELDS = (
     "nature,nature_libelle,procedure_libelle,type_marche,url_avis"
 )
 CRITERIA_MAX = 500
+CPV_MAX_CODES = 300
+CPV_CHUNK = 50
 _CPV_RE = re.compile(r"^\s*(\d{8})(?:-\d)?\s*$")
 
 
@@ -434,15 +444,31 @@ def parse_donnees(raw: Any) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- client
-def _normalise_cpv(cpv: str) -> str:
-    """Return the 8-digit CPV code from ``cpv`` or raise a helpful ``ValueError``."""
-    match = _CPV_RE.match(cpv)
-    if not match:
+_CPV_PREFIX_RE = re.compile(r"^\s*(\d{2,7})\*?\s*$")
+
+
+def _cpv_clause(cpv: str) -> str:
+    """Build the ``where`` clause for an exact 8-digit CPV code or a 2-7 digit prefix.
+
+    Raises:
+        ValueError: If ``cpv`` is neither, or the prefix covers too many codes.
+    """
+    exact = _CPV_RE.match(cpv)
+    if exact:
+        return f"search(donnees, {quote(exact.group(1))})"
+    prefix = _CPV_PREFIX_RE.match(cpv)
+    if not prefix:
         raise ValueError(
-            f"cpv {cpv!r} is not a full 8-digit CPV code (e.g. '72000000' or '72000000-5'). "
-            "BOAMP can only match exact codes, not prefixes or divisions: pass the exact code."
+            f"cpv {cpv!r} is not a CPV code: pass an exact 8-digit code ('72000000' or "
+            "'72000000-5') or a 2-7 digit prefix ('72', '7221') covering all sub-codes. "
+            "Use search_cpv_codes to find a code from words."
         )
-    return match.group(1)
+    codes = cpv_nomenclature.expand(prefix.group(1), max_codes=CPV_MAX_CODES)
+    terms = [f"search(donnees, {quote(c)})" for c in codes]
+    chunks = [
+        "(" + " OR ".join(terms[i : i + CPV_CHUNK]) + ")" for i in range(0, len(terms), CPV_CHUNK)
+    ]
+    return " OR ".join(chunks)
 
 
 def _normalise_department(dep: str) -> list[str]:
@@ -509,8 +535,9 @@ class BoampClient:
 
         Args:
             keywords: Words that must all appear in the notice title (``objet``).
-            cpv: Exact 8-digit CPV code (``-<digit>`` suffix tolerated). Matched as a token in
-                the notice body, with no hierarchy and no prefix support.
+            cpv: Exact 8-digit CPV code (``-<digit>`` suffix tolerated) matched as a token in
+                the notice body, or a 2-7 digit prefix (``"72"``, ``"7221"``) expanded to every
+                official sub-code and OR-ed (ValueError beyond 300 codes, e.g. '45').
             departments: Department codes (``"31"``, ``"2A"``, ``"971"``); any match qualifies.
             published_from: Earliest publication date (inclusive).
             published_to: Latest publication date (inclusive).
@@ -543,8 +570,8 @@ class BoampClient:
         clauses: list[str | None] = []
         if keywords and keywords.strip():
             clauses.append(f"search(objet, {quote(keywords.strip())})")
-        if cpv:
-            clauses.append(f"search(donnees, {quote(_normalise_cpv(cpv))})")
+        cpv_clause = _cpv_clause(cpv.strip()) if cpv else None
+        clauses.append(cpv_clause)
         if departments:
             codes = [c for dep in departments for c in _normalise_department(dep)]
             clauses.append(in_list("code_departement", _dedupe(codes)))
@@ -561,6 +588,11 @@ class BoampClient:
         if buyer and buyer.strip():
             clauses.append(f"search(nomacheteur, {quote(buyer.strip())})")
         where = and_all(clauses)
+        # Echo a readable query: an expanded CPV prefix can be ~12 KB of OR clauses.
+        echo = where
+        if cpv_clause is not None and where is not None and len(cpv_clause) > 300:
+            n_codes = cpv_clause.count("search(donnees")
+            echo = where.replace(cpv_clause, f"<cpv prefix {cpv.strip()}: {n_codes} codes>")
         params = {
             "select": LIST_FIELDS,
             "where": where,
@@ -579,11 +611,13 @@ class BoampClient:
                 offset=offset,
                 returned=len(records),
                 next_offset=(
-                    next_offset if records and next_offset < min(total, MAX_WINDOW) else None
+                    next_offset
+                    if records and next_offset < total and next_offset + limit <= MAX_WINDOW
+                    else None
                 ),
             ),
             notices=[_to_notice(r) for r in records],
-            query=where,
+            query=echo,
         )
 
     async def get_notice(self, notice_id: str) -> BoampNoticeDetail:
