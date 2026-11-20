@@ -360,3 +360,13 @@ async def test_veille_prompt_is_executable_with_one_department_per_call() -> Non
     text = prompt.messages[0].content.text
     assert "department=<code>" in text and "31" in text and "ONE department" in text
     assert "90910000-9" not in text
+
+
+async def test_an_unknown_argument_is_an_error_not_silently_ignored() -> None:
+    """20/11 live demo: `query` (instead of `keywords`) and `year` were dropped silently,
+    so the agent got 6 362 unrelated notices and an all-years ranking."""
+    server, _ = _server()
+    async with Client(server) as c:
+        res = await c.call_tool("search_boamp_notices", {"query": "intelligence artificielle"})
+    assert res.is_error
+    assert "query" in "".join(getattr(x, "text", "") for x in res.content)

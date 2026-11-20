@@ -698,6 +698,7 @@ def build_server(
             "End with a short table: notice, buyer, deadline, why it matters."
         )
 
+    _forbid_unknown_arguments(server)
     return server
 
 
@@ -750,3 +751,16 @@ def main(argv: list[str] | None = None) -> None:
         server.run("stdio")
     else:
         server.run("streamable-http", host=args.host, port=args.port)
+
+
+def _forbid_unknown_arguments(server: MCPServer) -> None:
+    """Reject arguments a tool does not declare instead of silently dropping them.
+
+    The SDK's argument models ignore extra keys: a misspelt filter (``query`` for ``keywords``)
+    would return unfiltered results that the agent takes for filtered ones. An explicit error
+    lets it retry.
+    """
+    for tool in server._tool_manager.list_tools():  # no public hook for this setting
+        model = tool.fn_metadata.arg_model
+        model.model_config["extra"] = "forbid"
+        model.model_rebuild(force=True)
