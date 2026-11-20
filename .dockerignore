@@ -1,0 +1,7 @@
+.venv
+.home
+.scratch
+.git
+tests
+eval
+**/__pycache__

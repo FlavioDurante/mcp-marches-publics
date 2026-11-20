@@ -1,0 +1,28 @@
+{
+ "total_count": 1,
+ "results": [
+  {
+   "idweb": "26-112779",
+   "id": "26_112779",
+   "objet": "RESTAURATION DU PONT-VIEUX D'ALBI : PHASE DE CONFORTEMENT DES PARTIES IMMERGÉES - OPÉRATION DE SAUVEGARDE PAR L’ÉTUDE",
+   "famille": "FNS",
+   "code_departement": [
+    "81"
+   ],
+   "dateparution": "2026-11-20",
+   "datelimitereponse": "2026-12-21T12:00:00+00:00",
+   "nomacheteur": "communauté agglo albigeois",
+   "titulaire": null,
+   "nature": "APPEL_OFFRE",
+   "nature_libelle": "Avis de marché",
+   "procedure_libelle": "Procédure Ouverte",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "annonce_lie": null,
+   "annonces_anterieures": null,
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-112779",
+   "donnees": "{\"FNSimple\": {\"initial\": {\"procedure\": {\"dateReceptionOffres\": \"2026-12-21T12:00:00.000\", \"criteresAttrib\": \"1. Critère Prix des prestations pondéré à 65 %.\\n2. Critère Valeur technique - qualité du projet scientifique d’intervention pondéré à 15 %.\\n3. Critère Délais d'exécution pondéré à 15 %.\\n4. Critère Performances en matière de protection de l'environnement pondéré à 5 %.\"}, \"natureMarche\": {\"intitule\": \"Restauration du pont-vieux d'Albi -  Phase de confortement des parties immergées  - Opération de sauvegarde par l’étude\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"79311000\"}}, \"description\": \"Restauration du pont-vieux d'Albi -  Phase de confortement des parties immergées  - Opération de sauvegarde par l’étude\", \"lotsMarche\": {\"non\": {\"@xsi:type\": \"xs:string\"}}}}}}"
+  }
+ ]
+}

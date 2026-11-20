@@ -1,0 +1,73 @@
+{
+ "notices": [
+  {
+   "place-of-performance": [
+    "FRK24",
+    "FRA",
+    "FRK24",
+    "FRA"
+   ],
+   "title-proc": {
+    "fra": "Prestations d'infogérance des moyens de calcul et licences scientifiques du CEA Grenoble"
+   },
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-27+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "757212-2026",
+   "buyer-country": [
+    "FRA"
+   ],
+   "description-lot": {
+    "fra": [
+     "Le présent marché porte sur les prestations d'infogérance des moyens de calcul et licences scientifiques du CEA Grenoble. Il comprend une tranche ferme d'une durée de deux ans à compter du 1er mars 2027, soit jusqu’au 28 février 2029. Il comprend les trois tranches optionnelles suivantes : - Tranche optionnelle n°1 : prolongation des Prestations pour une durée d’un (1) an, soit du 1er mars 2029 jusqu’au 28 février 2030. - Tranche optionnelle n°2 : prolongation des Prestations pour une durée d’un (1) an, soit du 1er mars 2030 jusqu’au 28 février 2031. - Tranche optionnelle n°3 : Phase de réversibilité Les prestations sont effectuées sur le site du CEA Grenoble."
+    ]
+   },
+   "procedure-type": "open",
+   "classification-cpv": [
+    "72510000",
+    "72510000"
+   ],
+   "buyer-name": {
+    "fra": [
+     "Commissariat à l'Energie Atomique"
+    ]
+   },
+   "publication-date": "2026-11-02+01:00",
+   "links": {
+    "xml": {
+     "MUL": "https://ted.europa.eu/en/notice/757212-2026/xml"
+    },
+    "pdf": {
+     "DEU": "https://ted.europa.eu/de/notice/757212-2026/pdf",
+     "ENG": "https://ted.europa.eu/en/notice/757212-2026/pdf",
+     "FRA": "https://ted.europa.eu/fr/notice/757212-2026/pdf"
+    },
+    "pdfs": {
+     "FRA": "https://ted.europa.eu/fr/notice/757212-2026/pdfs"
+    },
+    "html": {
+     "DEU": "https://ted.europa.eu/de/notice/-/detail/757212-2026",
+     "ENG": "https://ted.europa.eu/en/notice/-/detail/757212-2026",
+     "FRA": "https://ted.europa.eu/fr/notice/-/detail/757212-2026"
+    },
+    "htmlDirect": {
+     "DEU": "https://ted.europa.eu/de/notice/757212-2026/html",
+     "ENG": "https://ted.europa.eu/en/notice/757212-2026/html",
+     "FRA": "https://ted.europa.eu/fr/notice/757212-2026/html"
+    }
+   },
+   "notice-title": {
+    "fra": "France – Services de gestion relatifs à l'informatique – Prestations d'infogérance des moyens de calcul et licences scientifiques du CEA Grenoble",
+    "deu": "Frankreich – Mit der Datenverarbeitung verbundene Verwaltungsdienste – Prestations d'infogérance des moyens de calcul et licences scientifiques du CEA Grenoble",
+    "eng": "France – Computer-related management services – Prestations d'infogérance des moyens de calcul et licences scientifiques du CEA Grenoble"
+   },
+   "description-proc": {
+    "fra": "Le présent marché porte sur les prestations d'infogérance des moyens de calcul et licences scientifiques du CEA Grenoble. Il comprend une tranche ferme d'une durée de deux ans du 1er mars 2027 au 28 février 2029 et les trois tranches optionnelles suivantes : - Tranche optionnelle n°1 : prolongation des Prestations pour une durée d’un (1) an, soit du 1er mars 2029 jusqu’au 28 février 2030. - Tranche optionnelle n°2 : prolongation des Prestations pour une durée d’un (1) an, soit du 1er mars 2030 jusqu’au 28 février 2031. - Tranche optionnelle n°3 : Phase de réversibilité Les prestations sont effectuées sur le site du CEA Grenoble."
+   }
+  }
+ ],
+ "totalNoticeCount": 1,
+ "iterationNextToken": null,
+ "timedOut": false
+}

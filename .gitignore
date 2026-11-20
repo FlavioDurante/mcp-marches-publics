@@ -9,3 +9,5 @@ dist/
 build/
 *.egg-info/
 eval/results/
+CONTRATS.md
+VERDICT.md

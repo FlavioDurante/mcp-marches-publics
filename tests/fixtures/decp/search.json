@@ -1,0 +1,62 @@
+{
+ "total_count": 3,
+ "results": [
+  {
+   "id": "26-1193682-1",
+   "objet": "Marché de Prestation de service de formation et de sous-traitance de formation d'Anglais et de Français langue étrangère pour la région Ile-de-France: Lot 1 : Anglais professionnel",
+   "codecpv": "80530000-8",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "82422814200017",
+   "titulaire_id_1": "39297563700043",
+   "titulaire_typeidentifiant_1": "SIRET",
+   "titulaire_id_2": "81328921200074",
+   "titulaire_typeidentifiant_2": "SIRET",
+   "titulaire_id_3": "87927138500012",
+   "titulaire_typeidentifiant_3": "SIRET",
+   "montant": 771116.0,
+   "datenotification": "2026-11-16",
+   "dureemois": 12,
+   "offresrecues": "14",
+   "lieuexecution_code": "75012",
+   "lieuexecution_typecode": "Code postal"
+  },
+  {
+   "id": "26-1193683-2",
+   "objet": "Marché de Prestation de service de formation et de sous-traitance de formation d'Anglais et de Français langue étrangère pour la région Ile-de-France: Lot 2 : Français langue étrangère",
+   "codecpv": "80530000-8",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "82422814200017",
+   "titulaire_id_1": "39297563700043",
+   "titulaire_typeidentifiant_1": "SIRET",
+   "titulaire_id_2": "81328921200074",
+   "titulaire_typeidentifiant_2": "SIRET",
+   "titulaire_id_3": "87927138500012",
+   "titulaire_typeidentifiant_3": "SIRET",
+   "montant": 134900.0,
+   "datenotification": "2026-11-16",
+   "dureemois": 12,
+   "offresrecues": "12",
+   "lieuexecution_code": "75013",
+   "lieuexecution_typecode": "Code postal"
+  },
+  {
+   "id": "20269fnun00",
+   "objet": "Mission de maîtrise d'oeuvre pour la rénovation du complexe sportif Henri Gazeau à Combrée - Mission de maîtrise d'oeuvre pour la rénovation du complexe sportif Henri Gazeau à Combrée",
+   "codecpv": "71221000-3",
+   "procedure": "Procédure adaptée",
+   "acheteur_id": "20006947400019",
+   "titulaire_id_1": "97921149700016",
+   "titulaire_typeidentifiant_1": "SIRET",
+   "titulaire_id_2": "CDL",
+   "titulaire_typeidentifiant_2": "CDL",
+   "titulaire_id_3": "CDL",
+   "titulaire_typeidentifiant_3": "CDL",
+   "montant": 154999.98,
+   "datenotification": "2026-11-16",
+   "dureemois": 36,
+   "offresrecues": "37",
+   "lieuexecution_code": "49520",
+   "lieuexecution_typecode": "Code postal"
+  }
+ ]
+}

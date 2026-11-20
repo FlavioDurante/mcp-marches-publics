@@ -1,0 +1,310 @@
+# Evaluation questions for mcp-marches-publics.
+# Ground truths computed on 2026-11-20 by querying the official APIs directly (urllib, ODSQL /
+# TED expert query), independently of the project code. See PREREGISTRATION.md.
+#
+# `extract`: where the oracle reads the answer. A string = path in the LAST gold call result
+# (optionally "N:path" to pick gold call N, 0-based); a list = several paths (joined for
+# `contains`); a dict = named values (composite answers). Syntax: a.b[0].c / list[*].key.
+# Bases: BOAMP = https://boamp-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/boamp/records
+#        DECP  = https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/decp-2022-marches-valides/records
+#        TED   = POST https://api.ted.europa.eu/v3/notices/search (anonymous, scope ALL)
+#        ENT   = https://recherche-entreprises.api.gouv.fr/search?q=<siret>&page=1&per_page=1
+questions:
+  # ------------------------------------------------------------------ BOAMP (8)
+  - id: boamp-01
+    question: "Combien d'avis d'appel d'offres ont été publiés au BOAMP en octobre 2026 pour la Haute-Garonne (31) ?"
+    sources: [boamp]
+    answer_type: number_tolerance
+    expected: 220
+    tolerance_pct: 3
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: search_boamp_notices
+        args: {departments: ["31"], published_from: "2026-10-01", published_to: "2026-10-31", notice_kind: tender, limit: 1}
+    extract: page.total
+    verification: "GET BOAMP?limit=0&where=nature='APPEL_OFFRE' AND dateparution>=date'2026-10-01' AND dateparution<=date'2026-10-31' AND code_departement='31' -> total_count=220"
+  - id: boamp-02
+    question: "Combien d'avis d'appel d'offres ont été publiés au BOAMP en octobre 2026 en région Occitanie ?"
+    sources: [boamp]
+    answer_type: number_tolerance
+    expected: 728
+    tolerance_pct: 3
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: search_boamp_notices
+        args: {region: Occitanie, published_from: "2026-10-01", published_to: "2026-10-31", notice_kind: tender, limit: 1}
+    extract: page.total
+    note: "Upstream stores code_departement WITHOUT leading zero ('9' for Ariege, '3' for Allier); verified count uses ('9','11','12','30','31','32','34','46','48','65','66','81','82')."
+    verification: "GET BOAMP?limit=0&where=nature='APPEL_OFFRE' AND dateparution>=date'2026-10-01' AND dateparution<=date'2026-10-31' AND code_departement IN ('9','11','12','30','31','32','34','46','48','65','66','81','82') -> total_count=728"
+  - id: boamp-03
+    question: "Combien d'avis d'appel d'offres de travaux ont été publiés au BOAMP en octobre 2026 dans les Bouches-du-Rhône (13) ?"
+    sources: [boamp]
+    answer_type: number_tolerance
+    expected: 65
+    tolerance_pct: 5
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: search_boamp_notices
+        args: {departments: ["13"], market_type: TRAVAUX, published_from: "2026-10-01", published_to: "2026-10-31", notice_kind: tender, limit: 1}
+    extract: page.total
+    verification: "GET BOAMP?limit=0&where=dateparution>=date'2026-10-01' AND dateparution<=date'2026-10-31' AND type_marche='TRAVAUX' AND nature='APPEL_OFFRE' AND code_departement='13' -> total_count=65"
+  - id: boamp-04
+    question: "Combien d'avis d'appel d'offres de services ont été publiés au BOAMP en octobre 2026 en Gironde (33) ?"
+    sources: [boamp]
+    answer_type: number_tolerance
+    expected: 137
+    tolerance_pct: 3
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: search_boamp_notices
+        args: {departments: ["33"], market_type: SERVICES, published_from: "2026-10-01", published_to: "2026-10-31", notice_kind: tender, limit: 1}
+    extract: page.total
+    verification: "GET BOAMP?limit=0&where=dateparution>=date'2026-10-01' AND dateparution<=date'2026-10-31' AND nature='APPEL_OFFRE' AND type_marche='SERVICES' AND code_departement='33' -> total_count=137"
+  - id: boamp-05
+    question: "Combien de consultations BOAMP sont actuellement ouvertes (date limite de réponse non dépassée) avec le code CPV 72000000 (services informatiques) en France ?"
+    sources: [boamp]
+    answer_type: count_range
+    expected: [10, 25]
+    as_of: "2026-11-20"
+    note: "Live count, drifts daily (17 on 2026-11-20). CPV matched as exact token 72000000 inside the notice data, not as a prefix."
+    gold_calls:
+      - tool: search_boamp_notices
+        args: {cpv: "72000000", open_only: true, limit: 1}
+    extract: page.total
+    verification: "GET BOAMP?limit=0&where=datelimitereponse>=now() AND search(donnees,'72000000') -> total_count=17"
+  - id: boamp-06
+    question: "Combien de consultations BOAMP ouvertes en ce moment, code CPV 72000000, concernent Paris (75) ?"
+    sources: [boamp]
+    answer_type: count_range
+    expected: [3, 10]
+    as_of: "2026-11-20"
+    note: "Live count, drifts daily (6 on 2026-11-20)."
+    gold_calls:
+      - tool: search_boamp_notices
+        args: {cpv: "72000000", departments: ["75"], open_only: true, limit: 1}
+    extract: page.total
+    verification: "GET BOAMP?limit=0&where=datelimitereponse>=now() AND search(donnees,'72000000') AND code_departement='75' -> total_count=6"
+  - id: boamp-07
+    question: "Pour l'avis BOAMP 26-110146 (fourniture de sacs translucides et de sacs jaunes), quel est l'acheteur et quelle est la date limite de réponse ?"
+    sources: [boamp]
+    answer_type: contains
+    expected: ["SICTOM", "2026-12-03"]
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: get_boamp_notice
+        args: {notice_id: "26-110146"}
+    extract: [buyer, deadline]
+    verification: "GET BOAMP?limit=1&where=idweb='26-110146'&select=idweb,nomacheteur,datelimitereponse -> nomacheteur='SICTOM Région Montluçonnaise', datelimitereponse='2026-12-03T13:00:00+00:00'"
+  - id: boamp-08
+    question: "L'avis BOAMP 26-110149 (transformation d'un terrain de football en gazon synthétique) : quel acheteur, quelle date limite de réponse, et quel département ?"
+    sources: [boamp]
+    answer_type: contains
+    expected: ["AIGLE", "2026-12-14", "61"]
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: get_boamp_notice
+        args: {notice_id: "26-110149"}
+    extract: [buyer, deadline, departments]
+    verification: "GET BOAMP?limit=1&where=idweb='26-110149'&select=nomacheteur,datelimitereponse,code_departement -> nomacheteur=\"COMMUNE DE L'AIGLE\", datelimitereponse='2026-12-14T12:00:00+00:00', code_departement=['61']"
+
+  # ------------------------------------------------------------------ DECP (8)
+  - id: decp-01
+    question: "Quel fournisseur (donne son SIRET) a remporté le plus grand nombre de marchés notifiés en 2025 dans les services informatiques (CPV commençant par 72), en France ?"
+    sources: [decp]
+    answer_type: exact
+    expected: "30516304000119"
+    as_of: "2026-11-20"
+    note: "69 contracts; the company is CIRIL GROUP per recherche-entreprises. Ranking uses titulaire_id_1 only."
+    gold_calls:
+      - tool: rank_decp_parties
+        args: {by: supplier, order: count, cpv_prefix: "72", notified_from: "2025-01-01", notified_to: "2025-12-31", top: 5}
+    extract: entries[0].siret
+    verification: "GET DECP?limit=5&select=titulaire_id_1, count(*) as n&group_by=titulaire_id_1&order_by=n desc&where=startswith(codecpv,'72') AND titulaire_id_1!='CDL' AND datenotification>=date'2025-01-01' AND datenotification<=date'2025-12-31' -> 30516304000119 (n=69), 34054699300684 (57), 34503941600085 (51)"
+  - id: decp-02
+    question: "Donne les SIRET des 3 acheteurs publics qui ont notifié le plus de marchés de services informatiques (CPV commençant par 72) en 2025 en France."
+    sources: [decp]
+    answer_type: set
+    expected: ["18002002600019", "82454114800014", "43276694700019"]
+    as_of: "2026-11-20"
+    note: "243, 143, 123 contracts (first two: Caisse des Depots et Consignations, Action Logement Services per recherche-entreprises)."
+    gold_calls:
+      - tool: rank_decp_parties
+        args: {by: buyer, order: count, cpv_prefix: "72", notified_from: "2025-01-01", notified_to: "2025-12-31", top: 3}
+    extract: entries[*].siret
+    verification: "GET DECP?limit=3&select=acheteur_id, count(*) as n&group_by=acheteur_id&order_by=n desc&where=startswith(codecpv,'72') AND datenotification>=date'2025-01-01' AND datenotification<=date'2025-12-31'"
+  - id: decp-03
+    question: "En Haute-Garonne (31), quel acheteur (donne son SIRET) a notifié le plus de marchés de services informatiques (CPV commençant par 72) en 2025 ?"
+    sources: [decp]
+    answer_type: exact
+    expected: "18008901307994"
+    as_of: "2026-11-20"
+    note: "64 contracts, CNRS per recherche-entreprises. Department = lieuexecution_code is the department code '31' or a postal code starting with 31."
+    gold_calls:
+      - tool: rank_decp_parties
+        args: {by: buyer, order: count, cpv_prefix: "72", department: "31", notified_from: "2025-01-01", notified_to: "2025-12-31", top: 3}
+    extract: entries[0].siret
+    verification: "GET DECP?limit=3&select=acheteur_id, count(*) as n&group_by=acheteur_id&order_by=n desc&where=((lieuexecution_typecode='Code département' AND lieuexecution_code='31') OR (lieuexecution_typecode='Code postal' AND startswith(lieuexecution_code,'31'))) AND startswith(codecpv,'72') AND datenotification>=date'2025-01-01' AND datenotification<=date'2025-12-31' -> 18008901307994 (64), 24310051800170 (24), 20005379100014 (16)"
+  - id: decp-04
+    question: "Combien de marchés de travaux (CPV commençant par 45) ont été notifiés en 2025 en Haute-Garonne (31) d'après les données essentielles (DECP) ?"
+    sources: [decp]
+    answer_type: count_range
+    expected: [2250, 2450]
+    as_of: "2026-11-20"
+    note: "Strict (typecode department or postal) = 2319; loose (any lieuexecution_code starting with 31) = 2372. DECP data keeps being published late, so the count can still grow."
+    gold_calls:
+      - tool: search_decp_awards
+        args: {cpv_prefix: "45", department: "31", notified_from: "2025-01-01", notified_to: "2025-12-31", limit: 1}
+    extract: page.total
+    verification: "GET DECP?limit=0&where=startswith(lieuexecution_code,'31') AND startswith(codecpv,'45') AND datenotification>=date'2025-01-01' AND datenotification<=date'2025-12-31' -> 2372 (strict variant: 2319)"
+  - id: decp-05
+    question: "Combien de marchés (DECP) ont été notifiés en 2025 au titulaire de SIRET 30516304000119 ?"
+    sources: [decp]
+    answer_type: number_tolerance
+    expected: 99
+    tolerance_pct: 5
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: search_decp_awards
+        args: {supplier_siret: "30516304000119", notified_from: "2025-01-01", notified_to: "2025-12-31", limit: 1}
+    extract: page.total
+    verification: "GET DECP?limit=0&where=(titulaire_id_1='30516304000119' OR titulaire_id_2='30516304000119' OR titulaire_id_3='30516304000119') AND datenotification>=date'2025-01-01' AND datenotification<=date'2025-12-31' -> total_count=99 (same with titulaire_id_1 only)"
+  - id: decp-06
+    question: "Quel est le montant (en euros) du plus gros marché de services informatiques (CPV commençant par 72) notifié en 2025 à Paris (75) ?"
+    sources: [decp]
+    answer_type: number_tolerance
+    expected: 120000000
+    tolerance_pct: 1
+    as_of: "2026-11-20"
+    note: "Several contracts tie at 120 000 000 EUR (frameworks: amount is the maximum). Department 75 = lieuexecution_code is the department code 75 OR a postal code starting with 75 (a postal-code-only filter gives 100 000 000)."
+    gold_calls:
+      - tool: search_decp_awards
+        args: {cpv_prefix: "72", department: "75", notified_from: "2025-01-01", notified_to: "2025-12-31", order_by: amount, limit: 1}
+    extract: awards[0].amount_eur
+    verification: "GET DECP?limit=2&select=id,montant&order_by=montant desc&where=startswith(codecpv,'72') AND startswith(lieuexecution_code,'75') AND datenotification>=date'2025-01-01' AND datenotification<=date'2025-12-31' -> montant=120000000.0 (x3, lieuexecution_typecode='Code département')"
+  - id: decp-07
+    question: "Quel acheteur (SIRET) a le plus gros montant cumulé de marchés de maîtrise d'oeuvre et d'ingénierie (CPV commençant par 71) notifiés en 2025 ?"
+    sources: [decp]
+    answer_type: exact
+    expected: "21060079700182"
+    as_of: "2026-11-20"
+    note: "Total about 1.005 billion EUR over 8 contracts (frameworks, maximum amounts); the commune of Mandelieu-la-Napoule per recherche-entreprises. Amount rankings are sensitive to framework maxima."
+    gold_calls:
+      - tool: rank_decp_parties
+        args: {by: buyer, order: amount, cpv_prefix: "71", notified_from: "2025-01-01", notified_to: "2025-12-31", top: 3}
+    extract: entries[0].siret
+    verification: "GET DECP?limit=3&select=acheteur_id, sum(montant) as s, count(*) as n&group_by=acheteur_id&order_by=s desc&where=startswith(codecpv,'71') AND datenotification>=date'2025-01-01' AND datenotification<=date'2025-12-31' -> 21060079700182 (1005394510.0), 20009320100016 (611056067.24), 26060070500040 (565768642.0)"
+  - id: decp-08
+    question: "Combien de marchés de services informatiques (CPV commençant par 72) passés en appel d'offres ouvert ont été notifiés en 2025 ?"
+    sources: [decp]
+    answer_type: number_tolerance
+    expected: 1589
+    tolerance_pct: 5
+    as_of: "2026-11-20"
+    note: "Procedure label in DECP: \"Appel d'offres ouvert\"."
+    gold_calls:
+      - tool: search_decp_awards
+        args: {cpv_prefix: "72", procedure: "Appel d'offres ouvert", notified_from: "2025-01-01", notified_to: "2025-12-31", limit: 1}
+    extract: page.total
+    verification: "GET DECP?limit=0&where=startswith(codecpv,'72') AND procedure='Appel d\\'offres ouvert' AND datenotification>=date'2025-01-01' AND datenotification<=date'2025-12-31' -> total_count=1589"
+
+  # ------------------------------------------------------------------ TED (5)
+  - id: ted-01
+    question: "Combien d'avis TED ont été publiés en octobre 2026 pour des services informatiques (CPV 72000000 et sous-catégories) exécutés en France ?"
+    sources: [ted]
+    answer_type: number_tolerance
+    expected: 279
+    tolerance_pct: 5
+    as_of: "2026-11-20"
+    note: "All notice types. CPV match is hierarchical on TED."
+    gold_calls:
+      - tool: search_ted_notices
+        args: {cpv: "72000000", countries: ["FRA"], published_from: "2026-10-01", published_to: "2026-10-31", limit: 1}
+    extract: page.total
+    verification: "POST TED {query: 'classification-cpv IN (72000000) AND place-of-performance IN (FRA) AND publication-date>=20261001 AND publication-date<=20261031', fields: [publication-number], limit: 3, page: 1, scope: ALL} -> totalNoticeCount=279"
+  - id: ted-02
+    question: "Combien d'avis TED de travaux (CPV 45000000 et sous-catégories) exécutés en Belgique ont été publiés en octobre 2026 ?"
+    sources: [ted]
+    answer_type: number_tolerance
+    expected: 273
+    tolerance_pct: 5
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: search_ted_notices
+        args: {cpv: "45000000", countries: ["BEL"], published_from: "2026-10-01", published_to: "2026-10-31", limit: 1}
+    extract: page.total
+    verification: "POST TED {query: 'classification-cpv IN (45000000) AND place-of-performance IN (BEL) AND publication-date>=20261001 AND publication-date<=20261031', scope: ALL} -> totalNoticeCount=273"
+  - id: ted-03
+    question: "Combien d'avis TED de services d'environnement et de gestion des déchets (CPV 90000000 et sous-catégories) exécutés en Espagne ont été publiés en septembre 2026 ?"
+    sources: [ted]
+    answer_type: number_tolerance
+    expected: 442
+    tolerance_pct: 5
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: search_ted_notices
+        args: {cpv: "90000000", countries: ["ESP"], published_from: "2026-09-01", published_to: "2026-09-30", limit: 1}
+    extract: page.total
+    verification: "POST TED {query: 'classification-cpv IN (90000000) AND place-of-performance IN (ESP) AND publication-date>=20260901 AND publication-date<=20260930', scope: ALL} -> totalNoticeCount=442"
+  - id: ted-04
+    question: "Pour l'avis TED 757212-2026, quel est l'acheteur et quelle est la date limite de remise des offres ?"
+    sources: [ted]
+    answer_type: contains
+    expected: ["Energie Atomique", "2026-11-27"]
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: get_ted_notice
+        args: {publication_number: "757212-2026"}
+    extract: [buyer, deadline]
+    verification: "POST TED {query: 'publication-number=757212-2026', fields: [buyer-name, deadline-receipt-tender-date-lot], scope: ALL} -> buyer-name={fra:[\"Commissariat à l'Energie Atomique\"]}, deadline='2026-11-27+01:00'"
+  - id: ted-05
+    question: "Pour l'avis TED 674672-2026, quel est l'acheteur et quelle est la date limite de remise des offres ?"
+    sources: [ted]
+    answer_type: contains
+    expected: ["High-Performance Computing", "2026-12-03"]
+    as_of: "2026-11-20"
+    gold_calls:
+      - tool: get_ted_notice
+        args: {publication_number: "674672-2026"}
+    extract: [buyer, deadline]
+    verification: "POST TED {query: 'classification-cpv IN (72000000) AND place-of-performance IN (FRA) AND publication-date>=20261001 AND publication-date<=20261031', scope: ALL, limit 3} first notice 674672-2026 -> buyer-name={eng:['European High-Performance Computing Joint Undertaking']}, deadline-receipt-tender-date-lot=['2026-12-03+01:00']"
+
+  # ------------------------------------------------------------------ cross-source / no result / trick (3)
+  - id: trick-01
+    question: "Combien de marchés ont été notifiés entre 1995 et 1999 d'après les données essentielles de la commande publique (DECP) ?"
+    sources: [decp]
+    answer_type: count_range
+    expected: [0, 0]
+    as_of: "2026-11-20"
+    note: "No-result question: the dataset starts in 2010 (26 rows before 2013). The honest answer is zero / no data for that period."
+    gold_calls:
+      - tool: search_decp_awards
+        args: {notified_from: "1995-01-01", notified_to: "1999-12-31", limit: 1}
+    extract: page.total
+    verification: "GET DECP?limit=0&where=datenotification>=date'1990-01-01' AND datenotification<=date'1999-12-31' -> total_count=0 (min(datenotification)=2010-06-02)"
+  - id: trick-02
+    question: "Le marché DECP « SA3_MS_REMPLACEMENT TABLIER PONT GRENELLE PARIS 15E » (Ville de Paris, notifié le 25 mars 2026) : qui est le titulaire ? Donne son SIRET et son nom, et précise ce que les DECP fournissent directement."
+    sources: [decp]
+    answer_type: contains
+    expected: ["41101878100079", "INFRANEO"]
+    as_of: "2026-11-20"
+    note: "Honest answer: DECP carries only the SIRET (no names); the name comes from the recherche-entreprises directory (lookup_company or the names resolved by the server). Fails if the agent invents a name."
+    gold_calls:
+      - tool: search_decp_awards
+        args: {buyer_siret: "21750001600019", keywords: "REMPLACEMENT TABLIER PONT GRENELLE", notified_from: "2026-03-25", notified_to: "2026-03-25", limit: 5}
+    extract: ["awards[0].supplier_sirets[0]", "awards[0].supplier_names[0]"]
+    verification: "GET DECP?limit=1&where=id='2026S012230000' -> titulaire_id_1='41101878100079', acheteur_id='21750001600019', datenotification='2026-03-25'; GET ENT?q=41101878100079&page=1&per_page=1 -> nom_complet='INFRANEO (INFRANEO)'"
+  - id: cross-01
+    question: "Pour octobre 2026 et le code CPV 72000000 (services informatiques), compare le volume d'avis publiés au BOAMP (tous types d'avis) et sur TED pour la France (lieu d'exécution FRA, tous types d'avis). Réponds avec un objet {\"boamp\": <nombre>, \"ted\": <nombre>}."
+    sources: [boamp, ted]
+    answer_type: number_tolerance
+    expected: {boamp: 37, ted: 279}
+    tolerance_pct: 5
+    as_of: "2026-11-20"
+    note: "BOAMP matches CPV as an exact token (not hierarchical), TED hierarchically: the two counts are not like-for-like, which a careful answer should mention."
+    gold_calls:
+      - tool: search_boamp_notices
+        args: {cpv: "72000000", published_from: "2026-10-01", published_to: "2026-10-31", notice_kind: any, limit: 1}
+      - tool: search_ted_notices
+        args: {cpv: "72000000", countries: ["FRA"], published_from: "2026-10-01", published_to: "2026-10-31", limit: 1}
+    extract: {boamp: "0:page.total", ted: "1:page.total"}
+    verification: "GET BOAMP?limit=0&where=dateparution>=date'2026-10-01' AND dateparution<=date'2026-10-31' AND search(donnees,'72000000') -> 37 ; POST TED (same query as ted-01) -> 279"

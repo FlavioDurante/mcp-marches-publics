@@ -1,0 +1,17 @@
+{
+ "results": [
+  {
+   "siren": "343059564",
+   "nom_complet": "SOCIETE FRANCAISE DU RADIOTELEPHONE - S.F.R",
+   "nom_raison_sociale": "SOCIETE FRANCAISE DU RADIOTELEPHONE - S.F.R",
+   "nature_juridique": "5599",
+   "siege": {
+    "siret": "34305956400959"
+   }
+  }
+ ],
+ "total_results": 1,
+ "page": 1,
+ "per_page": 1,
+ "total_pages": 1
+}

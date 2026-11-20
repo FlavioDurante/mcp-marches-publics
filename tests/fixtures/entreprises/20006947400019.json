@@ -1,0 +1,17 @@
+{
+ "results": [
+  {
+   "siren": "200069474",
+   "nom_complet": "COMMUNE DE OMBREE D'ANJOU",
+   "nom_raison_sociale": "COMMUNE DE OMBREE D'ANJOU",
+   "nature_juridique": "7210",
+   "siege": {
+    "siret": "20006947400019"
+   }
+  }
+ ],
+ "total_results": 1,
+ "page": 1,
+ "per_page": 1,
+ "total_pages": 1
+}

@@ -1,0 +1,74 @@
+{
+ "total_count": 30812,
+ "results": [
+  {
+   "idweb": "26-113109",
+   "objet": "26m0380pa - Travaux de renforcement de la canalisation d'Aep  Réhabilitation de la canalisation d'Eu - Avenue de Plaisance à Cugnaux",
+   "nomacheteur": "Toulouse Métropole",
+   "dateparution": "2026-11-20",
+   "datelimitereponse": "2026-12-14T12:00:00+00:00",
+   "code_departement": [
+    "31"
+   ],
+   "nature": "APPEL_OFFRE",
+   "nature_libelle": "Avis de marché",
+   "procedure_libelle": "Procédure Ouverte",
+   "type_marche": [
+    "TRAVAUX"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-113109"
+  },
+  {
+   "idweb": "26-113034",
+   "objet": "Marche De Maitrise D'oeuvre Relatif A La Realisation D'Un Pasa   Centre Hospitalier De Mirande  Operation M2503",
+   "nomacheteur": "Groupement Hospitalier de Territoire du Gers",
+   "dateparution": "2026-11-20",
+   "datelimitereponse": "2026-12-18T14:00:00+00:00",
+   "code_departement": [
+    "32",
+    "31"
+   ],
+   "nature": "APPEL_OFFRE",
+   "nature_libelle": "Avis de marché",
+   "procedure_libelle": "Procédure Ouverte",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-113034"
+  },
+  {
+   "idweb": "26-112847",
+   "objet": "Organisation, gestion et animation de l'école de musique de la commune de LA SALVETAT-SAINT-GILLES",
+   "nomacheteur": "Mairie de la Salvetat Saint Gilles",
+   "dateparution": "2026-11-20",
+   "datelimitereponse": "2026-12-15T12:00:00+00:00",
+   "code_departement": [
+    "31"
+   ],
+   "nature": "APPEL_OFFRE",
+   "nature_libelle": "Avis de marché",
+   "procedure_libelle": "Procédure Ouverte",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-112847"
+  },
+  {
+   "idweb": "26-112139",
+   "objet": "26V0149PA - LOCATION, MONTAGE ET DEMONTAGE DE CHALETS EN BOIS POUR TOULOUSE PLAGES - ANNEES 2027 à 2030",
+   "nomacheteur": "Ville de Toulouse",
+   "dateparution": "2026-11-20",
+   "datelimitereponse": "2026-12-14T11:00:00+00:00",
+   "code_departement": [
+    "31"
+   ],
+   "nature": "APPEL_OFFRE",
+   "nature_libelle": "Avis de marché",
+   "procedure_libelle": "Procédure Ouverte",
+   "type_marche": [
+    "FOURNITURES"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-112139"
+  }
+ ]
+}

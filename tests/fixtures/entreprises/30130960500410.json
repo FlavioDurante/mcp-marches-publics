@@ -1,0 +1,17 @@
+{
+ "results": [
+  {
+   "siren": "301309605",
+   "nom_complet": "SMACL ASSURANCES (SMACL)",
+   "nom_raison_sociale": "SMACL ASSURANCES",
+   "nature_juridique": "6411",
+   "siege": {
+    "siret": "30130960500410"
+   }
+  }
+ ],
+ "total_results": 1,
+ "page": 1,
+ "per_page": 1,
+ "total_pages": 1
+}

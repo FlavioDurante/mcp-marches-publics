@@ -1,0 +1,87 @@
+{
+ "notices": [
+  {
+   "place-of-performance": [
+    "FRC13",
+    "FRA",
+    "FRC13",
+    "FRA"
+   ],
+   "title-proc": {
+    "fra": "Relance - Restructuration des locaux de la maison départementale des solidarités de Chagny – Lot n°12 : Ascenseur"
+   },
+   "notice-type": "can-standard",
+   "publication-number": "756387-2026",
+   "result-value-notice": "27000",
+   "total-value-cur": [
+    "EUR"
+   ],
+   "buyer-country": [
+    "FRA"
+   ],
+   "total-value": 27000,
+   "tender-value-cur": [
+    "EUR"
+   ],
+   "tender-value": [
+    "27000"
+   ],
+   "description-lot": {
+    "fra": [
+     "Relance - Restructuration des locaux de la maison départementale des solidarités de Chagny – Lot n°12 : Ascenseur."
+    ]
+   },
+   "procedure-type": "oth-single",
+   "classification-cpv": [
+    "45313100",
+    "45313100"
+   ],
+   "buyer-name": {
+    "fra": [
+     "DEPARTEMENT DE SAONE-ET-LOIRE"
+    ]
+   },
+   "publication-date": "2026-11-02+01:00",
+   "links": {
+    "xml": {
+     "MUL": "https://ted.europa.eu/en/notice/756387-2026/xml"
+    },
+    "pdf": {
+     "DEU": "https://ted.europa.eu/de/notice/756387-2026/pdf",
+     "ENG": "https://ted.europa.eu/en/notice/756387-2026/pdf",
+     "FRA": "https://ted.europa.eu/fr/notice/756387-2026/pdf"
+    },
+    "pdfs": {
+     "FRA": "https://ted.europa.eu/fr/notice/756387-2026/pdfs"
+    },
+    "html": {
+     "DEU": "https://ted.europa.eu/de/notice/-/detail/756387-2026",
+     "ENG": "https://ted.europa.eu/en/notice/-/detail/756387-2026",
+     "FRA": "https://ted.europa.eu/fr/notice/-/detail/756387-2026"
+    },
+    "htmlDirect": {
+     "DEU": "https://ted.europa.eu/de/notice/756387-2026/html",
+     "ENG": "https://ted.europa.eu/en/notice/756387-2026/html",
+     "FRA": "https://ted.europa.eu/fr/notice/756387-2026/html"
+    }
+   },
+   "winner-name": {
+    "fra": [
+     "ORONA SAS"
+    ]
+   },
+   "notice-title": {
+    "fra": "France – Travaux d'installation d'ascenseurs – Relance - Restructuration des locaux de la maison départementale des solidarités de Chagny – Lot n°12 : Ascenseur",
+    "deu": "Frankreich – Installation von Aufzügen – Relance - Restructuration des locaux de la maison départementale des solidarités de Chagny – Lot n°12 : Ascenseur",
+    "eng": "France – Lift installation work – Relance - Restructuration des locaux de la maison départementale des solidarités de Chagny – Lot n°12 : Ascenseur"
+   },
+   "result-value-cur-notice": "EUR",
+   "description-proc": {
+    "fra": "Relance - Restructuration des locaux de la maison départementale des solidarités de Chagny – Lot n°12 : Ascenseur."
+   }
+  }
+ ],
+ "totalNoticeCount": 1,
+ "iterationNextToken": null,
+ "timedOut": false
+}
