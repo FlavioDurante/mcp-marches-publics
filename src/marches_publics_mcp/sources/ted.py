@@ -220,14 +220,7 @@ def _all_texts(value: Any) -> list[str]:
                 return _all_texts(value[lang])
         return []
     items = value if isinstance(value, list) else [value]
-    out: list[str] = []
-    for item in items:
-        if item is None:
-            continue
-        text = _unescape(str(item)).strip()
-        if text and text not in out:
-            out.append(text)
-    return out
+    return _as_list([_unescape(str(item)) for item in items if item is not None])
 
 
 def _as_list(value: Any) -> list[str]:

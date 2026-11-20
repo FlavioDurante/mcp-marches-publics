@@ -13,6 +13,10 @@ authors = [{ name = "Flavio Durante" }]
 keywords = ["mcp", "public-procurement", "boamp", "decp", "ted", "open-data", "llm", "agents"]
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Development Status :: 3 - Alpha",
   "Topic :: Scientific/Engineering :: Information Analysis",
   "Intended Audience :: Developers",
 ]

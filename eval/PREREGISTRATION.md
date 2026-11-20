@@ -7,7 +7,7 @@ the old protocol.
 
 ## Question under test
 
-Can an LLM agent, given only the 7 MCP tools of this server, answer realistic public
+Can an LLM agent, given only the MCP tools of this server (8 since amendment 1), answer realistic public
 procurement watch questions (BOAMP, DECP, TED) correctly and cheaply?
 
 ## What the agent under test receives (and nothing else)
@@ -78,4 +78,10 @@ the counts). Per-item results are published with the summary.
 
 ## Amendments
 
-(none)
+1. 2026-11-20, before any agent-mode run. The server now exposes 8 tools: `search_cpv_codes`
+   (CPV codes from words, offline nomenclature) was added, and `search_boamp_notices` accepts a
+   CPV prefix (2-7 digits) in addition to an exact 8-digit code. The questions, ground truth and
+   gold calls are unchanged; the oracle still scores 24/24. Run parameters, previously implicit
+   in `run_eval.py`, are now fixed here: `max_tokens=2048` per model turn, provider default
+   temperature (not set), after 12 tool calls the next turn is forced to answer without tools
+   (`tool_choice` none). Any change to these values requires a new amendment.

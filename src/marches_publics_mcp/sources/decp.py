@@ -10,8 +10,9 @@ import asyncio
 import logging
 import os
 import re
+from collections.abc import Callable
 from datetime import date
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 from marches_publics_mcp.http import HttpClient, UpstreamError
 from marches_publics_mcp.models import (
@@ -32,6 +33,7 @@ DEFAULT_BASE_URL = (
 SOURCE = "decp"
 logger = logging.getLogger(__name__)
 PLACEHOLDER = "CDL"
+T = TypeVar("T")
 # Place-code types whose value starts with the department code (verified live, 2026-11-20).
 # Regions ("Code région": 75, 93...) and countries collide with department numbers, so they
 # are excluded; arrondissement/canton codes are rare and left out too.
@@ -67,35 +69,13 @@ def _clean(value: Any) -> Any:
     return value
 
 
-def _as_int(value: Any, field: str) -> int | None:
-    """Parse an integer field; log a warning and return ``None`` when it is malformed."""
+def _parse(value: Any, field: str, cast: Callable[[Any], T]) -> T | None:
+    """Convert a field with ``cast``; log a warning and return ``None`` when it is malformed."""
     if value is None:
         return None
     try:
-        return int(value)
+        return cast(value)
     except (TypeError, ValueError):
-        logger.warning("malformed upstream value", extra={"source": SOURCE, "field": field})
-        return None
-
-
-def _as_float(value: Any, field: str) -> float | None:
-    """Parse a float field; log a warning and return ``None`` when it is malformed."""
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        logger.warning("malformed upstream value", extra={"source": SOURCE, "field": field})
-        return None
-
-
-def _as_date(value: Any, field: str) -> date | None:
-    """Parse an ISO date (first 10 chars); ``None`` with a warning when malformed."""
-    if value is None:
-        return None
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except ValueError:
         logger.warning("malformed upstream value", extra={"source": SOURCE, "field": field})
         return None
 
@@ -262,7 +242,7 @@ class DecpClient:
         if not isinstance(data, dict) or not isinstance(data.get("results"), list):
             raise UpstreamError(SOURCE, "unexpected data from upstream")
         awards = [self._award(row) for row in data["results"] if isinstance(row, dict)]
-        total = _as_int(data.get("total_count"), "total_count")
+        total = _parse(data.get("total_count"), "total_count", int)
         if total is None:
             total = len(awards)
         if self._resolver is not None and awards:
@@ -297,12 +277,14 @@ class DecpClient:
             buyer_siret=_clean(row.get("acheteur_id")),
             supplier_sirets=sirets,
             supplier_names=[None] * len(sirets),
-            amount_eur=_as_float(amount, "montant"),
-            notified=_as_date(notified, "datenotification"),
+            amount_eur=_parse(amount, "montant", float),
+            notified=_parse(
+                notified, "datenotification", lambda v: date.fromisoformat(str(v)[:10])
+            ),
             cpv=_clean(row.get("codecpv")),
             procedure=_clean(row.get("procedure")),
             place_code=_clean(row.get("lieuexecution_code")),
-            duration_months=_as_int(duration, "dureemois"),
+            duration_months=_parse(duration, "dureemois", int),
             offers_received=int(offers) if offers is not None and str(offers).isdigit() else None,
         )
 
@@ -390,12 +372,12 @@ class DecpClient:
         for row in data["results"]:
             if not isinstance(row, dict) or not _clean(row.get(field)):
                 continue
-            amount = _as_float(row.get("total"), "total")
+            amount = _parse(row.get("total"), "total", float)
             entries.append(
                 RankEntry(
                     rank=len(entries) + 1,
                     siret=str(row[field]),
-                    contracts=_as_int(row.get("n") or 0, "n") or 0,
+                    contracts=_parse(row.get("n") or 0, "n", int) or 0,
                     total_amount_eur=round(amount, 2) if amount is not None else None,
                 )
             )
@@ -420,7 +402,7 @@ class DecpClient:
             order=order,
             filters=filters,
             total_contracts=(
-                (_as_int(count.get("total_count"), "total_count") or 0)
+                (_parse(count.get("total_count"), "total_count", int) or 0)
                 if isinstance(count, dict)
                 else 0
             ),

@@ -61,12 +61,26 @@ What was not found in any checked source:
 
 Caveats: the search covered GitHub repo search, the MCP registry, awesome-mcp-servers and PyPI. Private repos, Glama and Smithery listings, and npm search were not checked in full.
 
-### A.5 What this server adds (candidate angles, to verify against the build)
+### A.5 What this server adds (checked against the build, 2026-11-20)
 
-1. **Cross-source surface.** One MCP server with BOAMP (current notices), DECP (awarded contracts) and TED (EU notices and awards) behind one consistent schema. Gap confirmed as of this check: no open, keyless, self-hostable equivalent found.
-2. **Award analytics with SIRET resolution.** Join DECP award rows to company names through recherche-entreprises. AgentIA1984 exposes company lookup as a separate tool; a joined award-analytics tool was not found. To verify in its code.
-3. **LLM-compact outputs.** Pagination, a `response_format` (concise or detailed) and IDs kept only where a follow-up call needs them. Not found in the procurement servers checked.
-4. **Published task-based evaluation.** Tasks with verified ground truth taken from the open data themselves, reporting success rate, tool-call count and tokens. Not found for procurement. General method in Part B.
+1. **Three sources, one keyless surface.** BOAMP (notices), DECP (awarded contracts) and TED (EU
+   notices and results) behind 8 typed tools. The closest open project
+   (AgentIA1984-cmd/mcp-marches-publics) covers BOAMP + DECP + company lookup, without TED.
+2. **Current DECP data.** That project queries `decp-v3-marches-valides`, whose most recent
+   notification date is 2024-02-08 (checked live: `max(datenotification)`). This server uses
+   `decp-2022-marches-valides` (arrêté du 22/12/2022 format), up to date to within days.
+3. **Award analytics with names.** `rank_decp_parties` aggregates upstream (count or amount) and
+   joins SIRET to company names through recherche-entreprises, with explicit caveats
+   (framework-agreement maxima, first co-contractor only, incomplete coverage).
+4. **CPV handled the way users think.** BOAMP has no CPV field; the server bundles the official
+   CPV 2008 nomenclature (9,454 codes) to expand a prefix ("72" = all IT services) and to find
+   codes from words (`search_cpv_codes`). Measured: open IT tenders in Occitanie, exact code
+   72000000 → 0 notices, prefix 72 → 16.
+5. **A published evaluation.** 24 questions with ground truth computed directly against the
+   APIs, a pre-registered protocol, and an oracle run (24/24) proving the tools can answer
+   them. The agent run (which model finds the answer) is prepared but not run yet.
+6. **Engineering basics most servers in the table lack.** Recorded-fixture unit tests, MCP
+   end-to-end tests in memory and over stdio, retries with backoff, pacing, caching, JSON logs.
 
 ## Part B: best practices
 
@@ -85,7 +99,7 @@ Research done with the local papers tool first (`papers search`, `papers get`; S
 9. **Track operational metrics.** Anthropic's list: accuracy (with a held-out set), tool-call count, runtime, total tokens, and tool error rate; frequent invalid-parameter errors point to unclear descriptions. Same source.
 10. **Benchmarks and tool-use context.** ToolLLM (arXiv:2307.16789, 16,000+ APIs; 1,974 citations per OpenAlex) is the reference for large API sets. MCPToolBench++ (arXiv:2508.07575) reports over 4k MCP servers in 40+ categories but no task counts in the abstract. Per-tool numbers for these beyond the abstract: **not verified**.
 
-### B.2 Eval design for this project (proposal, not yet built)
+### B.2 Eval design for this project (built: see `eval/`)
 
 - Task set: questions answerable from the BOAMP, DECP and TED data alone, each with a ground truth derived from the raw records (not from a model answer).
 - Scoring: rule-based comparison of claims (MCP-Atlas style), with exact-match on identifiers (notice ID, SIRET, amounts).

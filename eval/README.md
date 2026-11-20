@@ -1,6 +1,6 @@
 # Evaluation
 
-Measures whether an LLM agent can answer procurement-watch questions with the 7 tools of this
+Measures whether an LLM agent can answer procurement-watch questions with the 8 tools of this
 server, and whether the tools can answer them at all (oracle baseline). Read
 `PREREGISTRATION.md` first: it fixes the protocol and the metrics.
 
@@ -62,3 +62,9 @@ ground truth) are at fault, not the model.
   department = code or postal prefix on DECP). Items state the definition in `note`.
 * The questions were written by the tool authors, which favours the tools.
 * A negative result is valid only under these conditions (model, prompt, questions, date).
+
+## Contamination
+
+`questions.yaml` is public, answers included. A model trained on this repository after
+publication could have seen them: report the model's training cutoff with any agent result,
+and refresh the dated questions (new periods, new notice ids) before comparing models.

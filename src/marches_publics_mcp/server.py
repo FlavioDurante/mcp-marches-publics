@@ -709,7 +709,10 @@ async def _resolve(region: str | None, departments: list[str] | None) -> list[st
 
 def main(argv: list[str] | None = None) -> None:
     """Run the server (stdio by default). Nothing but the protocol goes to stdout."""
-    parser = argparse.ArgumentParser(prog="marches-publics-mcp", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="mcp-marches-publics",
+        description="MCP server for French and EU public procurement data (BOAMP, DECP, TED).",
+    )
     parser.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (streamable-http).")
     parser.add_argument("--port", type=int, default=8000, help="Bind port (streamable-http).")
