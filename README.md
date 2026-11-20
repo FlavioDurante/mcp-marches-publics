@@ -1,7 +1,11 @@
 # mcp-marches-publics
 
-**An MCP server that lets Claude, Cursor or any MCP client search French and EU public
-procurement open data: open tenders (BOAMP, TED), awarded contracts (DECP) and who wins them.**
+**An AI assistant that does your public-procurement watch for you: it finds the tenders that
+concern you, tells you who usually wins them and at what price, in France and across Europe,
+from official sources only.**
+
+Plug this MCP server into Claude, Cursor or any MCP client and ask in plain language: open
+tenders (BOAMP, TED), awarded contracts (DECP), who buys and who wins what.
 
 No API key. Official sources only. Compact, paginated outputs designed for LLM context windows.
 Every claim about quality below is backed by a test suite and a published evaluation set.
