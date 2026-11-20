@@ -80,8 +80,9 @@ Offset = Annotated[
 Keywords = Annotated[
     str | None,
     Field(
-        description="Free-text words searched in the title/object. Short and in French for "
-        "BOAMP/DECP.",
+        description="Words that must all appear in the title/object, in French for BOAMP/DECP. "
+        "Words of 4 letters or fewer (acronyms: IA, ERP, SIG) match whole words only; longer "
+        "words also match their plurals.",
         examples=["maintenance logiciel", "nettoyage locaux"],
         max_length=200,
     ),
@@ -311,6 +312,14 @@ def build_server(
     @server.tool(annotations=_RO, title="Search BOAMP notices (France)")
     async def search_boamp_notices(
         keywords: Keywords = None,
+        exclude_keywords: Annotated[
+            str | None,
+            Field(
+                description="Words of which none may appear in the title, to drop false "
+                "positives (e.g. keywords='données', exclude_keywords='téléphonie voix').",
+                max_length=200,
+            ),
+        ] = None,
         cpv: CpvBoamp = None,
         region: Annotated[
             str | None,
@@ -366,6 +375,7 @@ def build_server(
             "boamp",
             clients.boamp.search(
                 keywords=keywords,
+                exclude_keywords=exclude_keywords,
                 cpv=_strip_cpv(cpv),
                 departments=codes,
                 published_from=published_from,

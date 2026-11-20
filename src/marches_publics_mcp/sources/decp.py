@@ -24,7 +24,7 @@ from marches_publics_mcp.models import (
     truncate,
 )
 from marches_publics_mcp.sources.entreprises import CompanyResolver
-from marches_publics_mcp.sources.ods import and_all, date_literal, in_list, quote
+from marches_publics_mcp.sources.ods import and_all, date_literal, in_list, keyword_clause, quote
 
 DEFAULT_BASE_URL = (
     "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/"
@@ -140,7 +140,7 @@ class DecpClient:
             raise ValueError("`min_amount` must be lower than or equal to `max_amount`.")
         clauses: list[str | None] = []
         if keywords and keywords.strip():
-            clauses.append(f"search(objet, {quote(keywords.strip())})")
+            clauses.append(keyword_clause("objet", keywords))
         if cpv_prefix:
             cpv = cpv_prefix.strip().split("-")[0]
             if not re.fullmatch(r"\d{2,8}", cpv):

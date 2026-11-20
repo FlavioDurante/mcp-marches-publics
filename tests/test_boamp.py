@@ -68,7 +68,7 @@ async def test_search_builds_every_filter(client: BoampClient, fixture_loader: L
         buyer="Toulouse",
     )
     where = _where(route)
-    assert 'search(objet, "logiciel \\"ERP\\"")' in where
+    assert 'search(objet, "logiciel")' in where and 'objet like "ERP"' in where
     assert 'search(donnees, "72000000")' in where
     assert 'code_departement IN ("4", "04", "2A", "20A")' in where
     assert "dateparution >= date'2026-11-01'" in where
@@ -526,3 +526,30 @@ async def test_prefix_query_echo_is_compact(http, fixture_loader) -> None:
     assert sent.count("search(donnees") > 100
     assert result.query is not None and len(result.query) < 400
     assert "<cpv prefix 72:" in result.query and "code_departement" in result.query
+
+
+@respx.mock
+async def test_short_keywords_match_whole_words_long_ones_keep_their_plurals(
+    client: BoampClient, fixture_loader: Loader
+) -> None:
+    """20/11 live test: "IA" matched "IARD" and "data" matched "Datacenter" (prefix search).
+    Words of 4 letters or fewer (acronyms) now need the whole word; longer ones stay prefix
+    searches so "donnée" still finds "données"."""
+    route = respx.get(DEFAULT_BASE_URL).respond(json=fixture_loader("boamp", "search_page"))
+    await client.search(keywords="IA data données")
+    where = _where(route)
+    assert 'objet like "IA"' in where and 'objet like "data"' in where
+    assert 'search(objet, "données")' in where
+    assert 'search(objet, "IA")' not in where
+
+
+@respx.mock
+async def test_excluded_words_remove_false_positives(
+    client: BoampClient, fixture_loader: Loader
+) -> None:
+    """20/11 live test: "données" also returned telecom tenders ("voix et données")."""
+    route = respx.get(DEFAULT_BASE_URL).respond(json=fixture_loader("boamp", "search_page"))
+    await client.search(keywords="données", exclude_keywords="téléphonie voix")
+    where = _where(route)
+    assert 'NOT ((search(objet, "téléphonie")))' in where
+    assert 'NOT ((objet like "voix"))' in where

@@ -19,7 +19,11 @@ Facts verified live against the upstream dataset (2026-11-20), which drive the d
   parenthesised chunks of 50; and the GET URL is rejected (414) around 20-30 KB, i.e. ~600+
   codes. Hence ``CPV_MAX_CODES = 300`` (~12 KB). Division ``72`` (252 codes) works; ``45`` (822)
   must be narrowed. Batching into several requests is not an option (counts would be wrong).
-* ``search(objet, "a b")`` is a token AND over the title; it is what ``keywords`` uses.
+* ``search(objet, "a b")`` is a token AND over the title, but each token is a *prefix*: "IA"
+  matches "IARD", "data" matches "Datacenter". ``objet like "IA"`` matches the whole word
+  (accent- and case-insensitive) but loses plurals. ``keywords`` therefore uses ``like`` for
+  words of 4 letters or fewer (acronyms) and ``search`` for longer ones (measured live
+  2026-11-20: "IA" 6 → 2 true hits, "data" 4 → 1).
 * ``code_departement`` is multivalued and stored without zero padding for 1-9 (``"4"`` not
   ``"04"``); ``IN (...)`` matches if any value is in the list. Overseas codes are 3 digits.
   Corsica is stored as ``"20A"`` / ``"20B"``: ``"2A"`` / ``"2B"`` match nothing (0 rows in 2026
@@ -64,7 +68,14 @@ from marches_publics_mcp.models import (
     PageInfo,
     truncate,
 )
-from marches_publics_mcp.sources.ods import and_all, date_literal, in_list, quote
+from marches_publics_mcp.sources.ods import (
+    and_all,
+    date_literal,
+    exclude_clause,
+    in_list,
+    keyword_clause,
+    quote,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -606,6 +617,7 @@ class BoampClient:
         self,
         *,
         keywords: str | None = None,
+        exclude_keywords: str | None = None,
         cpv: str | None = None,
         departments: list[str] | None = None,
         published_from: date | None = None,
@@ -621,6 +633,7 @@ class BoampClient:
 
         Args:
             keywords: Words that must all appear in the notice title (``objet``).
+            exclude_keywords: Words of which none may appear in the title (false positives).
             cpv: Exact 8-digit CPV code (``-<digit>`` suffix tolerated) matched as a token in
                 the notice body, or a 2-7 digit prefix (``"72"``, ``"7221"``) expanded to every
                 official sub-code and OR-ed (ValueError beyond 300 codes, e.g. '45').
@@ -662,7 +675,9 @@ class BoampClient:
             raise ValueError("published_from must be on or before published_to.")
         clauses: list[str | None] = []
         if keywords and keywords.strip():
-            clauses.append(f"search(objet, {quote(keywords.strip())})")
+            clauses.append(keyword_clause("objet", keywords))
+        if exclude_keywords and exclude_keywords.strip():
+            clauses.append(exclude_clause("objet", exclude_keywords))
         cpv_clause = _cpv_clause(cpv.strip()) if cpv else None
         clauses.append(cpv_clause)
         if departments:
