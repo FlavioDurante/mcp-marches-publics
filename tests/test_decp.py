@@ -163,6 +163,7 @@ async def test_rank_buyer(client: DecpClient, fixture_loader: Loader) -> None:
     assert rank.filters == {"cpv_prefix": "9091", "department": "75", "notified_from": "2026-01-01"}
     text = " ".join(rank.caveats).lower()
     assert "maximum" in text and "first co-contractor" in text and "incomplete" in text
+    assert "idaccordcadre" in text and "counted twice" in text and "lieuexecution_code" in text
 
 
 @respx.mock

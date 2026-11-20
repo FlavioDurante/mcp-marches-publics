@@ -21,7 +21,7 @@ from marches_publics_mcp.models import (
     TedNoticeDetail,
     TedSearchResult,
 )
-from marches_publics_mcp.server import build_server
+from marches_publics_mcp.server import INSTRUCTIONS, build_server
 
 TOOLS = {
     "search_boamp_notices",
@@ -318,3 +318,45 @@ async def test_boamp_accepts_cpv_prefix() -> None:
         res = await c.call_tool("search_boamp_notices", {"cpv": "72"})
     assert not res.is_error
     assert clients["boamp"].calls[0]["cpv"] == "72"
+
+
+@pytest.mark.parametrize(
+    "tool", ["search_boamp_notices", "search_decp_awards", "rank_decp_parties"]
+)
+async def test_cpv_check_digit_is_stripped(tool: str) -> None:
+    server, clients = _server()
+    args: dict[str, Any] = {"by": "buyer"} if tool == "rank_decp_parties" else {}
+    key = "cpv" if tool == "search_boamp_notices" else "cpv_prefix"
+    args[key] = "90910000-9"
+    async with Client(server) as c:
+        res = await c.call_tool(tool, args)
+    assert not res.is_error
+    fake = clients["boamp" if tool == "search_boamp_notices" else "decp"]
+    assert fake.calls[0][key] == "90910000"
+
+
+async def test_ted_cpv_accepts_prefix_and_check_digit() -> None:
+    server, clients = _server()
+    async with Client(server) as c:
+        assert not (await c.call_tool("search_ted_notices", {"cpv": "72"})).is_error
+        assert not (await c.call_tool("search_ted_notices", {"cpv": "72212000-5"})).is_error
+    assert [call["cpv"] for call in clients["ted"].calls] == ["72", "72212000"]
+
+
+async def test_docs_state_diffusion_departments_rate_limit_and_cpv_rules() -> None:
+    server, _ = _server()
+    async with Client(server) as c:
+        tools = {t.name: t for t in (await c.list_tools()).tools}
+        sources = (await c.read_resource("marches://sources")).contents[0].text
+    assert "diffusion" in tools["search_boamp_notices"].description
+    assert "diffusion" in sources and "50,000" in sources
+    assert "padded" in INSTRUCTIONS and "no check digit" not in INSTRUCTIONS
+
+
+async def test_veille_prompt_is_executable_with_one_department_per_call() -> None:
+    server, _ = _server()
+    async with Client(server) as c:
+        prompt = await c.get_prompt("veille_marches", {"cpv": "90910000-9", "region": "Occitanie"})
+    text = prompt.messages[0].content.text
+    assert "department=<code>" in text and "31" in text and "ONE department" in text
+    assert "90910000-9" not in text

@@ -56,6 +56,9 @@ RANK_CAVEATS = [
     "Supplier ranking uses the first co-contractor (titulaire_id_1) of each contract only.",
     "DECP coverage is incomplete: not all buyers publish their data, so rankings are lower "
     "bounds and may under-represent some buyers or regions.",
+    "Framework agreements and their subsequent contracts (idaccordcadre) can both appear, so "
+    "amounts may be counted twice.",
+    "lieuexecution_code is declared upstream and is occasionally wrong.",
     "Suppliers without a SIRET (foreign VAT numbers, etc.) are excluded from supplier rankings.",
 ]
 

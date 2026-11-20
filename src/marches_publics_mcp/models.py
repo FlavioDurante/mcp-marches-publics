@@ -43,12 +43,34 @@ class BoampNotice(BaseModel):
     title: str | None
     buyer: str | None
     published: date | None
-    deadline: str | None = Field(default=None, description="Tender deadline (ISO datetime).")
-    departments: list[str] = []
+    deadline: str | None = Field(
+        default=None,
+        description="Tender deadline, ISO datetime in Europe/Paris time with its UTC offset.",
+    )
+    departments: list[str] = Field(
+        default=[],
+        description="Department codes in the input convention ('08', '2A', '971'): reusable "
+        "as the `departments` filter.",
+    )
     notice_type: str | None = Field(default=None, description="e.g. Avis de marché, Résultat.")
     procedure: str | None = None
     market_types: list[str] = Field(default=[], description="TRAVAUX / SERVICES / FOURNITURES.")
     url: str | None = None
+    status: str | None = Field(
+        default=None,
+        description="BOAMP `etat`: INITIAL, RECTIFICATIF, MODIFICATION or ANNULATION; tells a "
+        "rectification from its initial notice.",
+    )
+    linked_notices: list[str] = Field(
+        default=[],
+        description="Ids of related notices (initial notice of a rectification, earlier "
+        "notices, cancelled notice...).",
+    )
+    cancelled: bool | None = Field(
+        default=None,
+        description="True when an ANNULATION notice published on BOAMP points to this notice "
+        "(or to a notice it is linked to); null when the check could not be done.",
+    )
 
 
 class BoampSearchResult(BaseModel):

@@ -122,9 +122,9 @@ No variable holds a secret: none of the sources requires a key.
 | Source | API | Licence | Rate limit (as documented or observed) |
 |---|---|---|---|
 | BOAMP (DILA) | [Opendatasoft Explore v2.1](https://boamp-datadila.opendatasoft.com/explore/dataset/boamp/) | Licence Ouverte / Etalab | Header `X-RateLimit-Limit: 2000000` per day on the domain; 100 records per page, 10,000 records reachable per query |
-| DECP, format of the *arrêté du 22/12/2022* | [data.economie.gouv.fr `decp-2022-marches-valides`](https://data.economie.gouv.fr/explore/dataset/decp-2022-marches-valides/) | Licence Ouverte v2.0 (Etalab) | Same Opendatasoft limits |
+| DECP, format of the *arrêté du 22/12/2022* | [data.economie.gouv.fr `decp-2022-marches-valides`](https://data.economie.gouv.fr/explore/dataset/decp-2022-marches-valides/) | Licence Ouverte v2.0 (Etalab) | Header `X-RateLimit-Limit: 50000` per day on the domain (40x lower than BOAMP); same 100 / 10,000 windows |
 | TED (EU Publications Office) | [TED API v3 search](https://docs.ted.europa.eu/api/latest/search.html), anonymous | Free reuse, commercial or not, under [Commission Decision 2011/833/EU](https://ted.europa.eu/en/legal-notice) | [Fair usage](https://ted.europa.eu/en/simap/developers-corner-for-reusers): 700 requests per minute per IP; 15,000 results reachable per query |
-| Recherche d'entreprises (DINUM) | [recherche-entreprises.api.gouv.fr](https://recherche-entreprises.api.gouv.fr/) | Licence Ouverte | 7 requests per second (the client paces itself) |
+| Recherche d'entreprises (DINUM) | [recherche-entreprises.api.gouv.fr](https://recherche-entreprises.api.gouv.fr/) | Licence Ouverte | [7 calls per second](https://www.data.gouv.fr/dataservices/api-recherche-dentreprises/), may be lowered under load; the client paces itself |
 | CPV 2008 nomenclature | see `src/marches_publics_mcp/data/README.md` | EU reuse policy | bundled, offline |
 
 The client retries on network errors, 429 and 5xx with exponential backoff and jitter, honours
@@ -133,9 +133,19 @@ The client retries on network errors, 429 and 5xx with exponential backoff and j
 Known limits, stated plainly:
 
 - **BOAMP has no CPV field.** CPV codes live inside the notice payload; an 8-digit code matches
-  that exact code, a 2-7 digit prefix is expanded to the codes of the official nomenclature.
+  that exact code, a 2-7 digit prefix is expanded to the codes of the official nomenclature
+  (up to 300 codes: "72" works, "45" asks for a longer prefix). TED matches CPV hierarchically.
+- **BOAMP departments are diffusion departments**, not the place of performance: a notice is
+  returned if any of its departments matches (about 15% of Occitanie tenders in October 2026
+  also list departments outside the region). Corsica is stored as `20A` / `20B` upstream and
+  mapped from `2A` / `2B`.
+- **BOAMP data quality.** Some deadlines are typos (year 2924); `open_only` ignores deadlines
+  more than two years ahead. Rectifications are separate notices (`status`, `linked_notices`); a tender cancelled by a
+  later notice is flagged `cancelled: true`.
+  Deadlines are given in Europe/Paris time.
 - **DECP has no names.** Buyer and supplier names come from the company directory by SIRET, so a
-  name can be missing. Amounts of framework agreements are maxima, not money spent. Not every
+  name can be missing. Amounts of framework agreements are maxima, not money spent, and a framework agreement
+  and its subsequent contracts can both be counted in a total. Not every
   buyer publishes, so rankings are lower bounds. A more exhaustive consolidation exists
   ([decp.info / colibre.fr](https://colibre.fr), 277 MB Parquet) but has no query API; this
   server uses the official dataset that does.

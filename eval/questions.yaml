@@ -12,7 +12,7 @@
 questions:
   # ------------------------------------------------------------------ BOAMP (8)
   - id: boamp-01
-    question: "Combien d'avis d'appel d'offres ont été publiés au BOAMP en octobre 2026 pour la Haute-Garonne (31) ?"
+    question: "Combien d'avis d'appel d'offres ont été publiés au BOAMP en octobre 2026 et diffusés en Haute-Garonne (31) ?"
     sources: [boamp]
     answer_type: number_tolerance
     expected: 220
@@ -24,7 +24,7 @@ questions:
     extract: page.total
     verification: "GET BOAMP?limit=0&where=nature='APPEL_OFFRE' AND dateparution>=date'2026-10-01' AND dateparution<=date'2026-10-31' AND code_departement='31' -> total_count=220"
   - id: boamp-02
-    question: "Combien d'avis d'appel d'offres ont été publiés au BOAMP en octobre 2026 en région Occitanie ?"
+    question: "Combien d'avis d'appel d'offres ont été publiés au BOAMP en octobre 2026 et diffusés dans au moins un département de la région Occitanie ?"
     sources: [boamp]
     answer_type: number_tolerance
     expected: 728
@@ -61,7 +61,7 @@ questions:
     extract: page.total
     verification: "GET BOAMP?limit=0&where=dateparution>=date'2026-10-01' AND dateparution<=date'2026-10-31' AND nature='APPEL_OFFRE' AND type_marche='SERVICES' AND code_departement='33' -> total_count=137"
   - id: boamp-05
-    question: "Combien de consultations BOAMP sont actuellement ouvertes (date limite de réponse non dépassée) avec le code CPV 72000000 (services informatiques) en France ?"
+    question: "Combien de consultations BOAMP sont actuellement ouvertes (date limite de réponse non dépassée) avec exactement le code CPV 72000000 (pas ses sous-codes) en France ?"
     sources: [boamp]
     answer_type: count_range
     expected: [10, 25]
@@ -121,7 +121,7 @@ questions:
     extract: entries[0].siret
     verification: "GET DECP?limit=5&select=titulaire_id_1, count(*) as n&group_by=titulaire_id_1&order_by=n desc&where=startswith(codecpv,'72') AND titulaire_id_1!='CDL' AND datenotification>=date'2025-01-01' AND datenotification<=date'2025-12-31' -> 30516304000119 (n=69), 34054699300684 (57), 34503941600085 (51)"
   - id: decp-02
-    question: "Donne les SIRET des 3 acheteurs publics qui ont notifié le plus de marchés de services informatiques (CPV commençant par 72) en 2025 en France."
+    question: "Donne les SIRET des 3 acheteurs publics qui ont notifié le plus de marchés de services informatiques (CPV commençant par 72) en 2025 en France, en comptant les lignes DECP (chaque lot ou marché subséquent compte pour un)."
     sources: [decp]
     answer_type: set
     expected: ["18002002600019", "82454114800014", "43276694700019"]

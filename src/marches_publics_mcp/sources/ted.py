@@ -55,6 +55,7 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from marches_publics_mcp import cpv as cpv_codes
 from marches_publics_mcp.http import HttpClient, NotFoundError, UpstreamError
 from marches_publics_mcp.models import (
     TEXT_MAX,
@@ -129,7 +130,8 @@ def build_query(
 
     Args:
         keywords: Free text; each whitespace-separated word becomes an ANDed ``FT ~`` clause.
-        cpv: CPV code (2 to 8 digits, optional ``-N`` check digit); matches the whole subtree.
+        cpv: CPV code (2 to 8 digits, optional ``-N`` check digit); a prefix is padded with
+            zeros to its 8-digit branch code; matches the whole subtree.
         countries: ISO alpha-3 buyer countries, e.g. ``["FRA"]``.
         published_from: First publication date (inclusive).
         published_to: Last publication date (inclusive).
@@ -149,10 +151,7 @@ def build_query(
     for word in (keywords or "").replace('"', " ").split():
         clauses.append(f"FT ~ {_ft_literal(word)}")
     if cpv:
-        code = cpv.strip()
-        if not _CPV_RE.match(code):
-            raise ValueError(f"cpv must be 2 to 8 digits, e.g. '72000000' (got {cpv!r}).")
-        clauses.append(f"classification-cpv IN ({code.split('-')[0]})")
+        clauses.append(f"classification-cpv IN ({_ted_cpv(cpv)})")
     if countries:
         codes = [c.strip().upper() for c in countries]
         bad = [c for c in codes if not _COUNTRY_RE.match(c)]
@@ -176,6 +175,31 @@ def build_query(
         # TED rejects an empty query; "all notices since the start of the current year" is safe.
         clauses.append(f"publication-date>={_today().year}0101")
     return " AND ".join(clauses) + " SORT BY publication-date DESC"
+
+
+def _ted_cpv(raw: str) -> str:
+    """Turn a user CPV (2-8 digits, optional check digit) into a TED-accepted 8-digit code.
+
+    TED rejects short prefixes (HTTP 400 ``QUERY_UNSUPPORTED_FIELD_VALUE``) but matches an
+    8-digit code hierarchically, so a prefix is padded with zeros (``7221`` -> ``72210000``)
+    when that branch code exists in the bundled nomenclature.
+
+    Raises:
+        ValueError: If the format is wrong or the padded code is not a known CPV branch.
+    """
+    code = raw.strip()
+    if not _CPV_RE.match(code):
+        raise ValueError(f"cpv must be 2 to 8 digits, e.g. '72000000' (got {raw!r}).")
+    digits = code.split("-")[0]
+    if len(digits) == 8:
+        return digits
+    padded = digits.ljust(8, "0")
+    if cpv_codes.label(padded) is None:
+        raise ValueError(
+            f"cpv prefix {digits!r} does not match a CPV branch ({padded} is unknown): "
+            "use search_cpv_codes to find a valid code."
+        )
+    return padded
 
 
 def _today() -> date:

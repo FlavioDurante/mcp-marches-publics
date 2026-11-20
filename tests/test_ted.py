@@ -58,6 +58,19 @@ def test_build_query_cpv_check_digit_stripped() -> None:
 
 
 @pytest.mark.parametrize(
+    ("given", "sent"),
+    [("72", "72000000"), ("7221", "72210000"), ("72212000", "72212000"), ("72-4", "72000000")],
+)
+def test_build_query_pads_cpv_prefix_to_branch_code(given: str, sent: str) -> None:
+    assert f"classification-cpv IN ({sent})" in build_query(cpv=given)
+
+
+def test_build_query_unknown_cpv_branch_suggests_search_cpv_codes() -> None:
+    with pytest.raises(ValueError, match="search_cpv_codes"):
+        build_query(cpv="7299")
+
+
+@pytest.mark.parametrize(
     "kwargs",
     [
         {"cpv": "72 OR 1"},
@@ -300,3 +313,17 @@ async def test_unusable_notices_field_is_upstream_error(http: HttpClient) -> Non
     )
     with pytest.raises(UpstreamError, match="unexpected data"):
         await TedClient(http).search()
+
+
+@pytest.mark.integration
+async def test_live_cpv_prefixes_are_accepted() -> None:
+    client = HttpClient(cache_ttl=0)
+    try:
+        ted = TedClient(client)
+        totals = {}
+        for code in ("72", "7221", "72212000"):
+            res = await ted.search(cpv=code, countries=["FRA"], limit=1)
+            totals[code] = res.page.total
+        assert totals["72"] >= totals["7221"] >= totals["72212000"] > 0, totals
+    finally:
+        await client.aclose()

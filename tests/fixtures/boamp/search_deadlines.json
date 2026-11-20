@@ -1,0 +1,73 @@
+{
+ "total_count": 3,
+ "results": [
+  {
+   "idweb": "26-108995",
+   "objet": "NETTOYAGE REGULIER DES LOCAUX ET DES VITRERIES",
+   "nomacheteur": "ANSM.",
+   "dateparution": "2026-11-11",
+   "datelimitereponse": "2026-12-10T12:00:00+00:00",
+   "code_departement": [
+    "75",
+    "34"
+   ],
+   "nature": "APPEL_OFFRE",
+   "nature_libelle": "Avis de marché",
+   "procedure_libelle": "Procédure Ouverte",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-108995",
+   "etat": "INITIAL",
+   "annonce_lie": null,
+   "annonces_anterieures": null,
+   "gestion": "{\"REFERENCE\": {\"IDWEB\": \"26-108995\", \"TYPE_AVIS\": {\"FAMILLE\": {\"JOUE\": \"\"}, \"PERIMETRE\": {\"DIRECTIVE-24\": \"\"}, \"NATURE\": {\"APPEL_OFFRE\": {\"STANDARD\": \"\"}}, \"STATUT\": {\"INITIAL\": \"\"}}}, \"INDEXATION\": {\"SCHEMA\": \"3.2.5\", \"NOMORGANISME\": \"ANSM.\", \"TYPE_PROCEDURE\": {\"OUVERT\": \"\"}, \"DATE_PUBLICATION\": \"2026-11-11\", \"DATE_LIMITE_REPONSE\": \"2026-12-10T12:00:00.000+01:00\", \"DATE_FIN_DIFFUSION\": \"2026-12-11\", \"DESCRIPTEURS\": {\"DESCRIPTEUR\": {\"CODE\": \"239\", \"LIBELLE\": \"Nettoyage de locaux\"}}, \"NATURE_MARCHE\": {\"SERVICES\": \"\"}, \"CRITERES_SOCIAUX_ENV\": {\"ENVIRONNEMENTAUX\": \"\"}, \"DEP_PUBLICATION\": [\"75\", \"34\"], \"RESUME_OBJET\": \"NETTOYAGE REGULIER DES LOCAUX ET DES VITRERIES\"}}"
+  },
+  {
+   "idweb": "26-109092",
+   "objet": "NETTOYAGE DES VITRES DES BATIMENTS COMMUNAUX DE LA VILLE DE CUGNAUX",
+   "nomacheteur": "MAIRIE DE CUGNAUX",
+   "dateparution": "2026-11-09",
+   "datelimitereponse": "2026-11-30T12:00:00+00:00",
+   "code_departement": [
+    "31"
+   ],
+   "nature": "APPEL_OFFRE",
+   "nature_libelle": "Avis de marché",
+   "procedure_libelle": "Procédure Ouverte",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-109092",
+   "etat": "INITIAL",
+   "annonce_lie": null,
+   "annonces_anterieures": null,
+   "gestion": "{\"REFERENCE\": {\"IDWEB\": \"26-109092\", \"TYPE_AVIS\": {\"FAMILLE\": {\"FNS\": \"\"}, \"PERIMETRE\": {\"FNSimple\": \"\"}, \"NATURE\": {\"APPEL_OFFRE\": \"\"}, \"STATUT\": {\"INITIAL\": \"\"}}}, \"INDEXATION\": {\"SCHEMA\": \"3.2.5\", \"NOMORGANISME\": \"MAIRIE DE CUGNAUX\", \"TYPE_PROCEDURE\": {\"OUVERT\": \"\"}, \"DATE_PUBLICATION\": \"2026-11-09\", \"DATE_LIMITE_REPONSE\": \"2026-11-30T12:00:00\", \"DATE_FIN_DIFFUSION\": \"2026-11-30\", \"DESCRIPTEURS\": {\"DESCRIPTEUR\": {\"CODE\": \"239\", \"LIBELLE\": \"Nettoyage de locaux\"}}, \"NATURE_MARCHE\": {\"SERVICES\": \"\"}, \"CRITERES_SOCIAUX_ENV\": {\"ENVIRONNEMENTAUX\": \"\"}, \"DEP_PUBLICATION\": \"31\", \"RESUME_OBJET\": \"NETTOYAGE DES VITRES DES BATIMENTS COMMUNAUX DE LA VILLE DE CUGNAUX\"}}"
+  },
+  {
+   "idweb": "26-110249",
+   "objet": "Prestations de nettoyage des vitres pour les parties communes et bureaux du siège social du Groupe BRL et ses annexes",
+   "nomacheteur": "BRL - DJRSE",
+   "dateparution": "2026-11-14",
+   "datelimitereponse": "2026-11-26T11:00:00+00:00",
+   "code_departement": [
+    "30",
+    "34",
+    "13"
+   ],
+   "nature": "APPEL_OFFRE",
+   "nature_libelle": "Avis de marché",
+   "procedure_libelle": "Procédure Ouverte",
+   "type_marche": [
+    "SERVICES"
+   ],
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-110249",
+   "etat": "RECTIFICATIF",
+   "annonce_lie": [
+    "26-97946"
+   ],
+   "annonces_anterieures": null,
+   "gestion": "{\"REFERENCE\": {\"IDWEB\": \"26-110249\", \"TYPE_AVIS\": {\"FAMILLE\": {\"JOUE\": \"\"}, \"PERIMETRE\": {\"DIRECTIVE-24\": \"\"}, \"NATURE\": {\"APPEL_OFFRE\": {\"STANDARD\": \"\"}}, \"STATUT\": {\"RECTIFICATIF\": \"\"}}, \"ANNONCE_ANTERIEUR\": {\"IDWEB\": \"26-97946\"}}, \"INDEXATION\": {\"SCHEMA\": \"3.2.5\", \"NOMORGANISME\": \"BRL - DJRSE\", \"TYPE_PROCEDURE\": {\"OUVERT\": \"\"}, \"DATE_PUBLICATION\": \"2026-11-14\", \"DATE_LIMITE_REPONSE\": \"2026-11-26T12:00:00+01:00\", \"DATE_FIN_DIFFUSION\": \"2026-11-26\", \"DESCRIPTEURS\": {\"DESCRIPTEUR\": {\"CODE\": \"363\", \"LIBELLE\": \"Vitrerie\"}}, \"NATURE_MARCHE\": {\"SERVICES\": \"\"}, \"CRITERES_SOCIAUX_ENV\": {\"SOCIAUX\": \"\", \"ENVIRONNEMENTAUX\": \"\"}, \"DEP_PUBLICATION\": [\"30\", \"34\", \"13\"], \"RESUME_OBJET\": \"Prestations de nettoyage des vitres pour les parties communes et bureaux du siège social du Groupe BRL et ses annexes\"}}"
+  }
+ ]
+}

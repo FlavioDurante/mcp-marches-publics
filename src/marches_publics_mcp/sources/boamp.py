@@ -22,8 +22,22 @@ Facts verified live against the upstream dataset (2026-11-20), which drive the d
 * ``search(objet, "a b")`` is a token AND over the title; it is what ``keywords`` uses.
 * ``code_departement`` is multivalued and stored without zero padding for 1-9 (``"4"`` not
   ``"04"``); ``IN (...)`` matches if any value is in the list. Overseas codes are 3 digits.
+  Corsica is stored as ``"20A"`` / ``"20B"``: ``"2A"`` / ``"2B"`` match nothing (0 rows in 2026
+  against 854 / 773 for the stored spellings). Outputs are mapped back to the input convention.
 * ``datelimitereponse >= now()`` works for "still open"; award notices have no deadline and are
-  therefore excluded by ``open_only``.
+  therefore excluded by ``open_only``. About 3 % of those "open" notices carry an absurd deadline
+  (typos such as 2924-04-15), hence the upper bound ``<= now(years=2)`` (works live).
+* ``datelimitereponse`` always carries a ``+00:00`` suffix that is often wrong: notices of the
+  national form (FNS) store a naive Paris local time labelled UTC, EU-level (JOUE) ones store
+  the true instant. The reliable value is ``gestion`` → ``DATE_LIMITE_REPONSE`` (naive Paris
+  time, or with an explicit offset). It is only available inside ``gestion`` (~1 KB per record,
+  ~100 KB for a page of 100: still acceptable), so list queries select it and drop it.
+* ``etat`` (INITIAL, RECTIFICATIF, MODIFICATION, ANNULATION) tells rectifications from initial
+  notices; ``annonce_lie`` (list of ids) and ``annonces_anterieures`` (a JSON text whose
+  ``REFERENCE.IDWEB`` values are ids) link them. A tender is cancelled when an ``ANNULATION``
+  notice has it in ``annonce_lie``: one extra query per page (ids in chunks of 50) detects it.
+  Limit: the cancellation may point to a rectification instead of the initial notice; both the
+  notice id and its linked ids are checked, but a link BOAMP does not publish stays invisible.
 * ``limit`` is capped at 100 and ``offset + limit`` at 10000 (upstream returns HTTP 400 beyond).
 * An unknown ``idweb`` is not a 404: ODS answers ``total_count: 0``.
 """
@@ -35,11 +49,12 @@ import logging
 import os
 import re
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from marches_publics_mcp import cpv as cpv_nomenclature
-from marches_publics_mcp.http import HttpClient, NotFoundError
+from marches_publics_mcp.http import HttpClient, NotFoundError, UpstreamError
 from marches_publics_mcp.models import (
     TEXT_MAX,
     BoampNotice,
@@ -63,8 +78,12 @@ MAX_LIMIT = 100
 NATURE_BY_KIND = {"tender": "APPEL_OFFRE", "award": "ATTRIBUTION"}
 LIST_FIELDS = (
     "idweb,objet,nomacheteur,dateparution,datelimitereponse,code_departement,"
-    "nature,nature_libelle,procedure_libelle,type_marche,url_avis"
+    "nature,nature_libelle,procedure_libelle,type_marche,url_avis,etat,annonce_lie,"
+    "annonces_anterieures,gestion"
 )
+OPEN_MAX_YEARS = 2
+CANCEL_CHUNK = 50
+PARIS = ZoneInfo("Europe/Paris")
 CRITERIA_MAX = 500
 CPV_MAX_CODES = 300
 CPV_CHUNK = 50
@@ -472,14 +491,77 @@ def _cpv_clause(cpv: str) -> str:
 
 
 def _normalise_department(dep: str) -> list[str]:
-    """Return the spellings under which a department may be stored (``'04'`` → ``['4', '04']``)."""
+    """Return the spellings under which a department may be stored.
+
+    ``'04'`` → ``['4', '04']``; Corsica ``'2A'`` → ``['2A', '20A']`` (BOAMP stores ``20A``).
+    """
     clean = dep.strip().upper()
-    if not re.fullmatch(r"\d{1,3}|2[AB]", clean):
+    if not re.fullmatch(r"\d{1,3}|2[AB]|20[AB]", clean):
         raise ValueError(
             f"department {dep!r} is invalid: use a code like '31', '2A' or '971' (no names)."
         )
+    if clean[:2] in ("2A", "2B") or clean in ("20A", "20B"):
+        letter = clean[-1]
+        return [f"2{letter}", f"20{letter}"]
     stripped = clean.lstrip("0") or "0"
     return _dedupe([stripped, clean])
+
+
+def _department_code(raw: str) -> str:
+    """Map a stored code to the input convention (``'8'`` → ``'08'``, ``'20A'`` → ``'2A'``)."""
+    code = raw.strip().upper()
+    if code in ("20A", "20B"):
+        return "2" + code[-1]
+    return code.zfill(2) if code.isdigit() else code
+
+
+def _gestion_deadline(raw: Any) -> str | None:
+    """Read ``DATE_LIMITE_REPONSE`` from the ``gestion`` JSON text, or ``None``."""
+    data = _parse_donnees(raw)
+    return _first_text(data, "DATE_LIMITE_REPONSE")
+
+
+def _paris_deadline(record: dict[str, Any]) -> str | None:
+    """Return the response deadline as an ISO datetime in Europe/Paris time.
+
+    The upstream ``datelimitereponse`` field is mislabelled UTC for many notices, so the value
+    of ``gestion.DATE_LIMITE_REPONSE`` wins (naive = Paris local time, otherwise converted).
+    Falls back to the upstream field untouched when ``gestion`` has no usable value.
+    """
+    raw = _gestion_deadline(record.get("gestion"))
+    if raw:
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            logger.warning("unparsable deadline", extra={"source": SOURCE, "value": raw})
+        else:
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=PARIS)
+            return parsed.astimezone(PARIS).isoformat()
+    fallback = record.get("datelimitereponse")
+    return str(fallback) if fallback else None
+
+
+def _linked_ids(record: dict[str, Any]) -> list[str]:
+    """Ids of the notices linked to ``record`` (``annonce_lie`` and ``annonces_anterieures``)."""
+    own = str(record.get("idweb", ""))
+    ids = [str(i) for i in _as_list(record.get("annonce_lie")) if i]
+    for item in _as_list(record.get("annonces_anterieures")):
+        if isinstance(item, str) and item.strip().startswith(("{", "[")):
+            ids.extend(_text(v) or "" for v in _find_all(_parse_json_any(item), "IDWEB"))
+        elif isinstance(item, dict):
+            ids.extend(_text(v) or "" for v in _find_all(item, "IDWEB"))
+        elif item:
+            ids.append(str(item))
+    return [i for i in _dedupe(ids) if i != own]
+
+
+def _parse_json_any(raw: str) -> Any:
+    """Decode a JSON text of any shape; ``None`` when invalid."""
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
 
 
 def _to_notice(record: dict[str, Any]) -> BoampNotice:
@@ -494,12 +576,16 @@ def _to_notice(record: dict[str, Any]) -> BoampNotice:
         title=truncate(record.get("objet")),
         buyer=truncate(record.get("nomacheteur")),
         published=published_date,
-        deadline=record.get("datelimitereponse"),
-        departments=[str(d) for d in _as_list(record.get("code_departement"))],
+        deadline=_paris_deadline(record),
+        departments=_dedupe(
+            [_department_code(str(d)) for d in _as_list(record.get("code_departement"))]
+        ),
         notice_type=record.get("nature_libelle"),
         procedure=record.get("procedure_libelle"),
         market_types=[str(t) for t in _as_list(record.get("type_marche"))],
         url=record.get("url_avis"),
+        status=record.get("etat"),
+        linked_notices=_linked_ids(record),
     )
 
 
@@ -541,7 +627,9 @@ class BoampClient:
             departments: Department codes (``"31"``, ``"2A"``, ``"971"``); any match qualifies.
             published_from: Earliest publication date (inclusive).
             published_to: Latest publication date (inclusive).
-            open_only: Keep only notices whose response deadline is in the future.
+            open_only: Keep only notices whose response deadline is in the future and at most
+                2 years away (upstream holds absurd deadlines such as year 2924, typos that
+                would otherwise pass as "open"). Award notices have no deadline: excluded.
             notice_kind: ``tender`` (APPEL_OFFRE), ``award`` (ATTRIBUTION) or ``any``.
             market_type: ``TRAVAUX``, ``SERVICES`` or ``FOURNITURES``.
             buyer: Words that must appear in the buyer name.
@@ -550,6 +638,11 @@ class BoampClient:
 
         Returns:
             One page of notices with pagination info and the ODSQL ``where`` actually sent.
+            Each notice has ``status`` (INITIAL, RECTIFICATIF...), ``linked_notices`` and
+            ``cancelled`` (true when a BOAMP ANNULATION notice points to it, checked with one
+            extra query per 50 notices; null if that check fails). Deadlines are in Europe/Paris
+            time (read from the notice management data, because the upstream UTC label is wrong).
+            ``departments`` use the input convention (``'08'``, ``'2A'``).
 
         Raises:
             ValueError: On invalid input, with a message explaining how to fix the call.
@@ -580,7 +673,10 @@ class BoampClient:
         if published_to:
             clauses.append(f"dateparution <= {date_literal(published_to)}")
         if open_only:
-            clauses.append("datelimitereponse >= now()")
+            clauses.append(
+                "datelimitereponse >= now() "
+                f"AND datelimitereponse <= now(years={OPEN_MAX_YEARS})"
+            )
         if notice_kind in NATURE_BY_KIND:
             clauses.append(f"nature = {quote(NATURE_BY_KIND[notice_kind])}")
         if market_type:
@@ -616,9 +712,38 @@ class BoampClient:
                     else None
                 ),
             ),
-            notices=[_to_notice(r) for r in records],
+            notices=await self._with_cancellation([_to_notice(r) for r in records]),
             query=echo,
         )
+
+    async def _cancelled_ids(self, ids: list[str]) -> set[str] | None:
+        """Return which of ``ids`` are the target of an ANNULATION notice (``None`` on failure)."""
+        found: set[str] = set()
+        try:
+            for start in range(0, len(ids), CANCEL_CHUNK):
+                chunk = ids[start : start + CANCEL_CHUNK]
+                where = and_all([f"nature = {quote('ANNULATION')}", in_list("annonce_lie", chunk)])
+                params = {"select": "idweb,annonce_lie", "where": where, "limit": MAX_LIMIT}
+                body = await self._http.get_json(self._base_url, params, source=SOURCE)
+                for rec in body.get("results", []):
+                    if isinstance(rec, dict):
+                        found.update(str(i) for i in _as_list(rec.get("annonce_lie")))
+        except UpstreamError as exc:
+            logger.warning("cancellation check failed", extra={"source": SOURCE, "error": str(exc)})
+            return None
+        return found
+
+    async def _with_cancellation(self, notices: list[BoampNotice]) -> list[BoampNotice]:
+        """Set ``cancelled`` on each notice with one extra query per 50 ids."""
+        ids = _dedupe([i for n in notices for i in [n.id, *n.linked_notices]])
+        if not ids:
+            return notices
+        cancelled = await self._cancelled_ids(ids)
+        if cancelled is None:
+            return notices
+        for notice in notices:
+            notice.cancelled = any(i in cancelled for i in [notice.id, *notice.linked_notices])
+        return notices
 
     async def get_notice(self, notice_id: str) -> BoampNoticeDetail:
         """Fetch one notice and parse its payload into a compact detail view.
@@ -650,15 +775,10 @@ class BoampClient:
         record = records[0]
         parsed = parse_donnees(record.get("donnees"))
         winners = _dedupe([str(n) for n in _as_list(record.get("titulaire")) if n])
-        related = _dedupe(
-            [
-                str(i)
-                for key in ("annonce_lie", "annonces_anterieures")
-                for i in _as_list(record.get(key))
-            ]
-        )
+        (base,) = await self._with_cancellation([_to_notice(record)])
+        related = base.linked_notices
         return BoampNoticeDetail(
-            **_to_notice(record).model_dump(),
+            **base.model_dump(),
             description=parsed["description"] or truncate(record.get("objet"), TEXT_MAX),
             cpv=parsed["cpv"],
             estimated_value=parsed["estimated_value"],

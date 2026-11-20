@@ -85,3 +85,9 @@ the counts). Per-item results are published with the summary.
    in `run_eval.py`, are now fixed here: `max_tokens=2048` per model turn, provider default
    temperature (not set), after 12 tool calls the next turn is forced to answer without tools
    (`tool_choice` none). Any change to these values requires a new amendment.
+2. 2026-11-20, before any agent-mode run, after an independent content review. Four questions
+   were reworded to remove ambiguity, ground truth unchanged: `boamp-01` and `boamp-02` now say
+   "diffused in" (BOAMP departments are diffusion departments, not places of performance),
+   `boamp-05` says "exactly the code 72000000 (not its sub-codes)", `decp-02` says the count is
+   in DECP rows (each lot or subsequent contract counts once). `open_only` on BOAMP now ignores
+   deadlines more than two years ahead (upstream typos); `boamp-05` keeps its range.

@@ -53,9 +53,11 @@ Do not use TED for French-only questions (BOAMP is fresher and filters by depart
 only lists awarded contracts, never open tenders.
 
 Conventions
-- Dates are ISO (YYYY-MM-DD). CPV codes are digits only (no check digit). A 2-7 digit prefix
-  covers the whole branch (72 = all IT services) on BOAMP, DECP and TED; an 8-digit code on BOAMP
-  matches that exact code only. Unsure of the code? search_cpv_codes("nettoyage").
+- Dates are ISO (YYYY-MM-DD). CPV codes are digits; an optional check digit ("90910000-9") is
+  ignored. A 2-7 digit prefix covers the whole branch (72 = all IT services) on BOAMP and DECP;
+  on BOAMP an 8-digit code matches that exact code only. TED matches an 8-digit code and its
+  sub-codes (hierarchical); a prefix is padded to its branch code (7221 -> 72210000). Unsure of
+  the code? search_cpv_codes("nettoyage").
 - Lists are paginated: pass the `next_offset` of a result as `offset` (TED: pass `next_page`
   as `page`).
   Default limit is 10, maximum 50. Prefer narrowing filters over paging through many pages.
@@ -84,21 +86,24 @@ Keywords = Annotated[
         max_length=200,
     ),
 ]
-CpvExact = Annotated[
+CpvTed = Annotated[
     str | None,
     Field(
-        pattern=r"^\d{8}$",
-        description="CPV code, 8 digits, no check digit (e.g. 72000000 = IT services).",
-        examples=["72000000", "45000000"],
+        pattern=r"^\d{2,8}(-\d)?$",
+        description=(
+            "CPV code or prefix, 2-8 digits (72 = all IT services; 7221 = 72210000). TED matches "
+            "the code and all its sub-codes. Optional check digit (-N) is ignored."
+        ),
+        examples=["72", "72212000"],
     ),
 ]
 CpvBoamp = Annotated[
     str | None,
     Field(
-        pattern=r"^\d{2,8}$",
+        pattern=r"^\d{2,8}(-\d)?$",
         description=(
             "CPV prefix (2-7 digits, whole branch: 72 = all IT services, max 300 codes) or exact "
-            "8-digit code (that code only). No check digit."
+            "8-digit code (that code only). Optional check digit (-N) is ignored."
         ),
         examples=["72", "9091", "72212000"],
     ),
@@ -106,9 +111,12 @@ CpvBoamp = Annotated[
 CpvPrefix = Annotated[
     str | None,
     Field(
-        pattern=r"^\d{2,8}$",
-        description="CPV code or prefix, 2-8 digits (e.g. 72 = IT, 7222 = IT consulting).",
-        examples=["72", "45233"],
+        pattern=r"^\d{2,8}(-\d)?$",
+        description=(
+            "CPV code or prefix, 2-8 digits (e.g. 72 = IT, 7222 = IT consulting). Optional check "
+            "digit (-N, as stored in DECP) is ignored."
+        ),
+        examples=["72", "45233", "90910000-9"],
     ),
 ]
 Siret = Annotated[str | None, Field(pattern=r"^\d{14}$", description="14-digit SIRET.")]
@@ -348,14 +356,17 @@ def build_server(
         Do NOT use for: contract amounts or winners over time or rankings (use
         search_decp_awards / rank_decp_parties), nor for notices outside France (use
         search_ted_notices). Returns a compact list; call get_boamp_notice with an `id` for
-        the full notice.
+        the full notice. Caution: the region/department filter matches the notice's
+        *diffusion* departments (`code_departement`, multivalued), not the place of
+        performance: about 15% of October 2026 Occitanie tenders also list departments
+        outside Occitanie.
         """
         codes = await _guard("boamp", _resolve(region, departments))
         result = await _guard(
             "boamp",
             clients.boamp.search(
                 keywords=keywords,
-                cpv=cpv,
+                cpv=_strip_cpv(cpv),
                 departments=codes,
                 published_from=published_from,
                 published_to=published_to,
@@ -428,7 +439,7 @@ def build_server(
             "decp",
             clients.decp.search(
                 keywords=keywords,
-                cpv_prefix=cpv_prefix,
+                cpv_prefix=_strip_cpv(cpv_prefix),
                 buyer_siret=buyer_siret,
                 supplier_siret=supplier_siret,
                 department=department,
@@ -483,7 +494,7 @@ def build_server(
             clients.decp.rank(
                 by=by,
                 order=order,
-                cpv_prefix=cpv_prefix,
+                cpv_prefix=_strip_cpv(cpv_prefix),
                 keywords=keywords,
                 department=department,
                 buyer_siret=buyer_siret,
@@ -508,7 +519,7 @@ def build_server(
                 max_length=200,
             ),
         ] = None,
-        cpv: CpvExact = None,
+        cpv: CpvTed = None,
         countries: Annotated[
             list[str] | None,
             Field(
@@ -532,7 +543,7 @@ def build_server(
         """Search EU-wide public procurement notices on TED (Tenders Electronic Daily).
 
         Use for: tenders in other EU countries or cross-border, or above-threshold French
-        contracts seen from the EU side. Example: cpv="72000000", countries=["DEU","AUT"],
+        contracts seen from the EU side. Example: cpv="72" (or "72000000"), countries=["DEU","AUT"],
         open_only=true. Do NOT use for France-only searches by department/region (use
         search_boamp_notices) or for award amounts/rankings in France (DECP tools). Pagination
         is by `page`: pass the result's `next_page` as `page` (null = no more pages); `next_offset`
@@ -547,7 +558,7 @@ def build_server(
             "ted",
             clients.ted.search(
                 keywords=keywords,
-                cpv=cpv,
+                cpv=_strip_cpv(cpv),
                 countries=[c.upper() for c in countries] if countries else None,
                 published_from=published_from,
                 published_to=published_to,
@@ -664,7 +675,7 @@ def build_server(
         description="Monitoring workflow: open tenders for a CPV code in a region, then context.",
     )
     def veille_marches(cpv: str, region: str) -> str:
-        if not re.fullmatch(r"\d{2,8}", cpv.strip()):
+        if not re.fullmatch(r"\d{2,8}(-\d)?", cpv.strip()):
             raise MCPError(
                 INVALID_PARAMS, f"`cpv` must be 2 to 8 digits, e.g. 72000000 (got {cpv!r})."
             )
@@ -672,15 +683,18 @@ def build_server(
             geo.region_departments(region)
         except ValueError as exc:
             raise MCPError(INVALID_PARAMS, str(exc)) from exc
-        cpv, region = cpv.strip(), region.strip()
+        cpv, region = _strip_cpv(cpv.strip()), region.strip()
+        codes = ", ".join(geo.region_departments(region))
         return (
             f"Run a procurement watch for CPV {cpv} in the region {region}.\n"
             f"1. search_boamp_notices(cpv='{cpv}', region='{region}', open_only=true, "
             "notice_kind='tender'); list id, buyer, deadline, link.\n"
             f"2. For the 3 most promising, call get_boamp_notice and summarise object, value, "
             "lots, deadline.\n"
-            f"3. rank_decp_parties(by='buyer', cpv_prefix='{cpv[:4]}') for the region's "
-            "departments to show the main buyers, then by='supplier' for the competitors.\n"
+            f"3. rank_decp_parties takes ONE department: pick the 2-3 departments where the "
+            f"notices of step 1 are concentrated (region {region}: {codes}) and, for each, call "
+            f"rank_decp_parties(by='buyer', cpv_prefix='{cpv[:4]}', department=<code>) for the "
+            "main buyers, then by='supplier' for the competitors.\n"
             "End with a short table: notice, buyer, deadline, why it matters."
         )
 
@@ -699,7 +713,19 @@ essential data | Licence Ouverte v2.0 | weeks of lag; no buyer/supplier names, o
 incomplete coverage; amounts are notified values |
 | recherche-entreprises (DINUM) | SIRET/SIREN -> company name | Licence Ouverte v2.0 | live |
 | TED (EU Publications Office) | EU-wide notices | CC BY 4.0 | daily |
+
+Notes
+- BOAMP department/region filters match the notice's *diffusion* departments \
+(`code_departement`, multivalued), not the place of performance: about 15% of October 2026 \
+Occitanie tenders also list departments outside Occitanie.
+- Rate limits: data.economie.gouv.fr (DECP) allows 50,000 requests per day; the BOAMP domain \
+2,000,000 per day.
 """
+
+
+def _strip_cpv(code: str | None) -> str | None:
+    """Drop the optional ``-N`` check digit of a CPV code."""
+    return code.split("-")[0] if code else code
 
 
 async def _resolve(region: str | None, departments: list[str] | None) -> list[str] | None:

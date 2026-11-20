@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import date
 from typing import Any
@@ -10,13 +11,27 @@ import pytest
 import respx
 
 from marches_publics_mcp.http import HttpClient, NotFoundError, UpstreamError
-from marches_publics_mcp.sources.boamp import DEFAULT_BASE_URL, BoampClient, parse_donnees
+from marches_publics_mcp.sources.boamp import (
+    DEFAULT_BASE_URL,
+    BoampClient,
+    _paris_deadline,
+    parse_donnees,
+)
 
 Loader = Callable[[str, str], Any]
 
 
+def _search_calls(route: respx.Route) -> list[Any]:
+    """Calls of the main query (the per-page cancellation lookup is filtered out)."""
+    return [
+        c
+        for c in route.calls
+        if 'nature = "ANNULATION"' not in c.request.url.params.get("where", "")
+    ]
+
+
 def _where(route: respx.Route) -> str:
-    return route.calls.last.request.url.params["where"]
+    return _search_calls(route)[-1].request.url.params["where"]
 
 
 @pytest.fixture
@@ -31,7 +46,7 @@ async def test_search_without_filters_has_no_where(
 ) -> None:
     route = respx.get(DEFAULT_BASE_URL).respond(json=fixture_loader("boamp", "search_page"))
     await client.search()
-    params = route.calls.last.request.url.params
+    params = _search_calls(route)[-1].request.url.params
     assert "where" not in params
     assert params["order_by"] == "dateparution desc, idweb desc"
     assert params["limit"] == "10"
@@ -55,10 +70,10 @@ async def test_search_builds_every_filter(client: BoampClient, fixture_loader: L
     where = _where(route)
     assert 'search(objet, "logiciel \\"ERP\\"")' in where
     assert 'search(donnees, "72000000")' in where
-    assert 'code_departement IN ("4", "04", "2A")' in where
+    assert 'code_departement IN ("4", "04", "2A", "20A")' in where
     assert "dateparution >= date'2026-11-01'" in where
     assert "dateparution <= date'2026-11-20'" in where
-    assert "datelimitereponse >= now()" in where
+    assert "datelimitereponse >= now() AND datelimitereponse <= now(years=2)" in where
     assert 'nature = "APPEL_OFFRE"' in where
     assert 'type_marche IN ("SERVICES")' in where
     assert 'search(nomacheteur, "Toulouse")' in where
@@ -71,7 +86,7 @@ async def test_notice_kind_award_and_any(client: BoampClient, fixture_loader: Lo
     await client.search(notice_kind="award")
     assert _where(route) == '(nature = "ATTRIBUTION")'
     await client.search(notice_kind="any")
-    assert "nature" not in route.calls.last.request.url.params.get("where", "")
+    assert "nature" not in _search_calls(route)[-1].request.url.params.get("where", "")
 
 
 @respx.mock
@@ -193,6 +208,140 @@ async def test_upstream_400_becomes_upstream_error(client: BoampClient) -> None:
     respx.get(DEFAULT_BASE_URL).respond(400, json={"message": "ODSQL syntax exception"})
     with pytest.raises(UpstreamError, match="ODSQL"):
         await client.search(keywords="x")
+
+
+@respx.mock
+async def test_corsica_uses_the_stored_spellings(client: BoampClient) -> None:
+    route = respx.get(DEFAULT_BASE_URL).respond(json={"total_count": 0, "results": []})
+    await client.search(departments=["2A", "20B"])
+    assert 'code_departement IN ("2A", "20A", "2B", "20B")' in _where(route)
+
+
+@respx.mock
+async def test_output_departments_use_the_input_convention(client: BoampClient) -> None:
+    record = {
+        "idweb": "26-1",
+        "dateparution": "2026-01-01",
+        "code_departement": ["8", "20A", "20B", "971", "08", "75"],
+    }
+    respx.get(DEFAULT_BASE_URL).respond(json={"total_count": 1, "results": [record]})
+    result = await client.search()
+    assert result.notices[0].departments == ["08", "2A", "2B", "971", "75"]
+
+
+# ---------------------------------------------------------------- status, links, cancellation
+@respx.mock
+async def test_status_and_linked_notices(client: BoampClient, fixture_loader: Loader) -> None:
+    respx.get(DEFAULT_BASE_URL).respond(json=fixture_loader("boamp", "search_deadlines"))
+    by_id = {n.id: n for n in (await client.search()).notices}
+    assert by_id["26-109092"].status == "INITIAL" and by_id["26-109092"].linked_notices == []
+    rectif = by_id["26-110249"]
+    assert rectif.status == "RECTIFICATIF" and rectif.linked_notices == ["26-97946"]
+
+
+@respx.mock
+async def test_linked_ids_read_from_annonces_anterieures_json_text(client: BoampClient) -> None:
+    ant = '[{"REFERENCE": {"IDWEB": "22-79880"}}, {"REFERENCE": {"IDWEB": "22-90316"}}]'
+    record = {"idweb": "22-90316", "annonce_lie": ["22-1"], "annonces_anterieures": ant}
+    respx.get(DEFAULT_BASE_URL).respond(json={"total_count": 1, "results": [record]})
+    notice = (await client.search()).notices[0]
+    assert notice.linked_notices == ["22-1", "22-79880"]  # own id excluded
+
+
+@respx.mock
+async def test_cancelled_flag_from_one_extra_query(
+    client: BoampClient, fixture_loader: Loader
+) -> None:
+    page = fixture_loader("boamp", "search_deadlines")
+
+    def answer(request: Any) -> Any:
+        import httpx
+
+        if 'nature = "ANNULATION"' in request.url.params.get("where", ""):
+            where = request.url.params["where"]
+            assert "26-109092" in where and "26-97946" in where  # own and linked ids
+            return httpx.Response(
+                200,
+                json={
+                    "total_count": 1,
+                    "results": [{"idweb": "26-9", "annonce_lie": ["26-109092"]}],
+                },
+            )
+        return httpx.Response(200, json=page)
+
+    route = respx.get(DEFAULT_BASE_URL).mock(side_effect=answer)
+    notices = {n.id: n for n in (await client.search()).notices}
+    assert len(route.calls) == 2  # one search + ONE cancellation lookup for the whole page
+    assert notices["26-109092"].cancelled is True
+    assert notices["26-108995"].cancelled is False
+
+
+@respx.mock
+async def test_cancelled_is_null_when_the_lookup_fails(
+    client: BoampClient, fixture_loader: Loader
+) -> None:
+    import httpx
+
+    page = fixture_loader("boamp", "search_deadlines")
+
+    def answer(request: Any) -> Any:
+        if 'nature = "ANNULATION"' in request.url.params.get("where", ""):
+            return httpx.Response(400, json={"message": "boom"})
+        return httpx.Response(200, json=page)
+
+    respx.get(DEFAULT_BASE_URL).mock(side_effect=answer)
+    result = await client.search()
+    assert len(result.notices) == 3 and all(n.cancelled is None for n in result.notices)
+
+
+# ---------------------------------------------------------------- deadline time zone
+@respx.mock
+async def test_deadline_is_paris_time_from_gestion(
+    client: BoampClient, fixture_loader: Loader
+) -> None:
+    page = fixture_loader("boamp", "search_deadlines")
+    route = respx.get(DEFAULT_BASE_URL).respond(json=page)
+    result = await client.search()
+    assert "gestion" in _search_calls(route)[-1].request.url.params["select"].split(",")
+    by_id = {n.id: n for n in result.notices}
+    # FNS: naive local time wrongly labelled UTC upstream.
+    assert by_id["26-109092"].deadline == "2026-11-30T12:00:00+01:00"
+    # JOUE with a 12:00+01:00 raw value: upstream said 12:00+00:00 (one hour off).
+    assert by_id["26-108995"].deadline == "2026-12-10T12:00:00+01:00"
+    # JOUE already correct upstream (11:00 UTC == 12:00 Paris).
+    assert by_id["26-110249"].deadline == "2026-11-26T12:00:00+01:00"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("2026-11-30T12:00:00", "2026-11-30T12:00:00+01:00"),
+        ("2026-07-01T12:00:00", "2026-07-01T12:00:00+02:00"),  # summer time
+        ("2026-12-10T12:00:00.000+01:00", "2026-12-10T12:00:00+01:00"),
+        ("2026-07-01T10:00:00Z", "2026-07-01T12:00:00+02:00"),
+    ],
+)
+def test_paris_deadline_forms(raw: str, expected: str) -> None:
+    gestion = json.dumps({"INDEXATION": {"DATE_LIMITE_REPONSE": raw}})
+    record = {"gestion": gestion, "datelimitereponse": "2000-01-01T00:00:00+00:00"}
+    assert _paris_deadline(record) == expected
+
+
+def test_deadline_falls_back_to_upstream_field_without_gestion() -> None:
+    assert _paris_deadline({"datelimitereponse": "2026-12-01T10:00:00+00:00"}) == (
+        "2026-12-01T10:00:00+00:00"
+    )
+    assert _paris_deadline({"gestion": "not json"}) is None
+
+
+@respx.mock
+async def test_get_notice_deadline_and_status(client: BoampClient, fixture_loader: Loader) -> None:
+    page = fixture_loader("boamp", "search_deadlines")
+    record = next(r for r in page["results"] if r["idweb"] == "26-109092")
+    respx.get(DEFAULT_BASE_URL).respond(json={"total_count": 1, "results": [record]})
+    notice = await client.get_notice("26-109092")
+    assert notice.deadline == "2026-11-30T12:00:00+01:00"
+    assert notice.status == "INITIAL" and notice.cancelled is False
 
 
 # ---------------------------------------------------------------- get_notice
@@ -334,6 +483,32 @@ async def test_live_cpv_prefix_finds_more_than_exact_code() -> None:
             cpv="9091", departments=["69"], published_from=date(2026, 1, 1), limit=1
         )
         assert rhone.page.total >= 0
+    finally:
+        await http.aclose()
+
+
+@pytest.mark.integration
+async def test_live_corsica_status_deadline_and_open_bound() -> None:
+    http = HttpClient(cache_ttl=0)
+    try:
+        boamp = BoampClient(http)
+        corse = await boamp.search(departments=["2A"], published_from=date(2026, 1, 1), limit=5)
+        assert corse.page.total > 0
+        for notice in corse.notices:
+            assert "2A" in notice.departments and not any(
+                d.startswith("20") for d in notice.departments
+            )
+            assert notice.status is not None
+        opened = await boamp.search(open_only=True, notice_kind="tender", limit=100)
+        assert opened.page.total > 0
+        for notice in opened.notices:
+            assert notice.deadline and notice.deadline < "2029"
+            assert notice.deadline.endswith(("+01:00", "+02:00"))
+        assert any(n.cancelled is not None for n in opened.notices)
+        fns = await boamp.get_notice("26-109092")
+        assert fns.deadline == "2026-11-30T12:00:00+01:00"
+        assert (await boamp.get_notice("26-108995")).deadline == "2026-12-10T12:00:00+01:00"
+        assert (await boamp.get_notice("26-110249")).deadline == "2026-11-26T12:00:00+01:00"
     finally:
         await http.aclose()
 
