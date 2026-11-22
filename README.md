@@ -1,5 +1,7 @@
 # mcp-marches-publics
 
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-lightgrey.svg)](LICENSE) ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-2f7f84.svg) ![Tests: 225 offline](https://img.shields.io/badge/tests-225%20offline-2f7f84.svg) ![Eval: oracle 24/24](https://img.shields.io/badge/eval-oracle%2024%2F24-2f7f84.svg)
+
 **An AI assistant that does your public-procurement watch for you: it finds the tenders that
 concern you, tells you who usually wins them and at what price, in France and across Europe,
 from official sources only.**
@@ -60,6 +62,13 @@ and [MCP tool-description research](https://arxiv.org/abs/2602.14878):
   `page` block with `total` and `next_offset`, and a `hint` when a search returns nothing.
 - **Honest aggregates**: rankings carry their caveats (framework-agreement maxima, first
   co-contractor only, incomplete coverage).
+
+### Conventions
+
+- Dates are ISO (`YYYY-MM-DD`). CPV codes are digits; an optional check digit (`90910000-9`) is ignored.
+- Lists are paginated: pass the `next_offset` of a result as `offset` (TED: `next_page` as `page`). Default limit 10, maximum 50.
+- DECP carries only SIRET identifiers; names are resolved through the company directory and may be `null`.
+- Use BOAMP for French questions (fresher, filters by department), TED for EU-wide or foreign notices; DECP lists awarded contracts only, never open tenders.
 
 ## Install
 
