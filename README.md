@@ -96,7 +96,7 @@ claude mcp add marches-publics -- uvx mcp-marches-publics
 ```
 
 Until the package is on PyPI, replace `uvx mcp-marches-publics` with
-`uvx --from git+<repository-url> mcp-marches-publics`, or with a local checkout:
+`uvx --from git+https://github.com/FlavioDurante/mcp-marches-publics mcp-marches-publics`, or with a local checkout:
 `uv run --directory /path/to/mcp-marches-publics mcp-marches-publics`.
 
 ### Streamable HTTP

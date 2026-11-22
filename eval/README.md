@@ -41,8 +41,7 @@ real APIs); agent mode needs it too.
 * `extract`: path read in the result of the last gold call (`page.total`,
   `entries[0].siret`, `entries[*].siret`, `awards[0].amount_eur`); `N:path` selects gold call N;
   a list gathers several paths; a dict gives named values for composite answers.
-* Gold call arguments use the tool parameter names of `server.py` (same as the client
-  keyword arguments in `CONTRATS.md`, plus `region` on `search_boamp_notices`).
+* Gold call arguments use the tool parameter names of `server.py`.
 * The ground-truth verification uses the upstream APIs directly, never the project clients.
 
 ## What is measured
